@@ -12,6 +12,7 @@ ROW_GROUP_SIZE = 32 * 1024 * 1024
 
 _spark_session = SparkSession.builder.getOrCreate()
 
+
 class SparkDatasetConverter(object):
     """
     A `SparkDatasetConverter` object holds one materialized spark dataframe and
@@ -66,6 +67,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
     Use atexit to delete the cache before the python interpreter exits.
     :param df:        A :class:`DataFrame` object.
     :param cache_dir: A string denoting the directory for the saved parquet file.
+    :param compression: Specify compression type.
     :return:          A string denoting the path of the saved parquet file.
     """
     uuid_str = str(uuid.uuid4())
