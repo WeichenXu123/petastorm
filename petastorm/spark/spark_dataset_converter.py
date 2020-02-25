@@ -67,7 +67,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
     Use atexit to delete the cache before the python interpreter exits.
     :param df:        A :class:`DataFrame` object.
     :param cache_dir: A string denoting the directory for the saved parquet file.
-    :param compression: Specify compression type.
+    :param compression: A string specifying the compression type.
     :return:          A string denoting the path of the saved parquet file.
     """
     uuid_str = str(uuid.uuid4())
@@ -77,14 +77,17 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
 
     _spark_session.conf.set(
         "spark.sql.parquet.compression.codec", compression)
-    df.write \
-        .option("parquet.block.size", row_group_size) \
-        .parquet(save_to_dir)
-    atexit.register(shutil.rmtree, save_to_dir, True)
 
-    # Restore compression setting.
-    _spark_session.conf.set(
-        "spark.sql.parquet.compression.codec", old_compression)
+    try:
+        df.write \
+            .option("parquet.block.size", row_group_size) \
+            .parquet(save_to_dir)
+        atexit.register(shutil.rmtree, save_to_dir, True)
+
+    finally:
+        # Restore compression setting.
+        _spark_session.conf.set(
+            "spark.sql.parquet.compression.codec", old_compression)
 
     # remove _xxx files, which will break `pyarrow.parquet` loading
     underscore_files = [f for f in os.listdir(save_to_dir) if f.startswith("_")]
