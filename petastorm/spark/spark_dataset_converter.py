@@ -34,24 +34,30 @@ class SparkDatasetConverter(object):
         return self.dataset_size
 
     def make_tf_dataset(self):
-        reader = make_batch_reader("file://" + self.cache_file_path)
-        return tf_dataset_context_manager(reader)
+        # TODO: make data_uri support both local fs and hdfs
+        #   1. if cache_file_path is local path, convert it into "file:///..."
+        #   2. if cache_file_path is hdfs path: "hdfs:/...", keep it unchanged
+        #   3. if other cases, raise error.
+        data_uri = "file://" + self.cache_file_path
+        return tf_dataset_context_manager(data_uri)
 
     def delete(self):
         """
         Delete cache files at self.cache_file_path.
         """
+        # TODO:
+        #   make it support both local fs and hdfs
         shutil.rmtree(self.cache_file_path, ignore_errors=True)
 
 
 class tf_dataset_context_manager:
 
-    def __init__(self, reader):
+    def __init__(self, data_uri):
         """
         :param reader: A :class:`petastorm.reader.Reader` object.
         """
-        self.reader = reader
-        self.dataset = make_petastorm_dataset(reader)
+        self.reader = make_batch_reader(data_uri)
+        self.dataset = make_petastorm_dataset(self.reader)
 
     def __enter__(self):
         return self.dataset
