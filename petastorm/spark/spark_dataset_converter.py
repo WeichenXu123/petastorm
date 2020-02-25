@@ -81,9 +81,14 @@ class CachedDataFrameMeta(object):
         # hold the dataframe object (dataframe plan will not reference dataframe object),
         # This means the dataframe can be released by spark gc.
         self.df_plan = _get_df_plan(df)
-        self.data_path = _materialize_df(
-            df, parent_cache_dir, row_group_size, compression_codec)
+        self.data_path = None
 
+    @classmethod
+    def create_cached_dataframe(df, parent_cache_dir, row_group_size, compression_codec):
+        meta = CachedDataFrameMeta(df, parent_cache_dir, row_group_size, compression_codec)
+        meta.data_path = _materialize_df(
+            df, parent_cache_dir, row_group_size, compression_codec)
+        return meta
 
 _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
