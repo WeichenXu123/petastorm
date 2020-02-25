@@ -174,6 +174,24 @@ def make_reader(dataset_url,
                            'Inner exception: %s', str(e))
 
 
+def normalize_data_url(dataset_url, hdfs_driver):
+    if dataset_url is None or not isinstance(dataset_url, six.string_types):
+        raise ValueError('dataset_url must be a string')
+
+    try:
+        dataset_metadata.get_schema_from_dataset_url(dataset_url, hdfs_driver=hdfs_driver)
+        warnings.warn('Please use make_reader (instead of \'make_batch_dataset\' function to read this dataset. '
+                      'You may get unexpected results. '
+                      'Currently make_batch_reader supports reading only Parquet stores that contain '
+                      'standard Parquet data types and do not require petastorm decoding.')
+    except PetastormMetadataError:
+        pass
+
+    dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
+    logger.debug('dataset_url: %s', dataset_url)
+    return dataset_url
+
+
 def make_batch_reader(dataset_url,
                       schema_fields=None,
                       reader_pool_type='thread', workers_count=10,
@@ -236,21 +254,7 @@ def make_batch_reader(dataset_url,
     :return: A :class:`Reader` object
     """
 
-    if dataset_url is None or not isinstance(dataset_url, six.string_types):
-        raise ValueError('dataset_url must be a string')
-
-    try:
-        dataset_metadata.get_schema_from_dataset_url(dataset_url, hdfs_driver=hdfs_driver)
-        warnings.warn('Please use make_reader (instead of \'make_batch_dataset\' function to read this dataset. '
-                      'You may get unexpected results. '
-                      'Currently make_batch_reader supports reading only Parquet stores that contain '
-                      'standard Parquet data types and do not require petastorm decoding.')
-    except PetastormMetadataError:
-        pass
-
-    dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
-    logger.debug('dataset_url: %s', dataset_url)
-
+    dataset_url = normalize_data_url(dataset_url, hdfs_driver=hdfs_driver)
     resolver = FilesystemResolver(dataset_url, hdfs_driver=hdfs_driver)
     filesystem = resolver.filesystem()
     dataset_path = resolver.get_dataset_path()

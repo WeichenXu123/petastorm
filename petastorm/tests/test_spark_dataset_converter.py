@@ -68,16 +68,12 @@ class TfConverterTest(unittest.TestCase):
         self.assertEqual(ts.bin_col.dtype.type, np.object_, "Binary type column is not inferred correctly.")
 
     def test_delete(self):
-        test_path = "/tmp/petastorm_test"
-        Path(test_path).mkdir(parents=True, exist_ok=True)
-        Path(os.path.join(test_path, "dir1")).mkdir(parents=True, exist_ok=True)
-        with open(os.path.join(test_path, "file1"), "w") as f:
-            f.write("abc")
-        with open(os.path.join(test_path, "file2"), "w") as f:
-            f.write("123")
-        converter = SparkDatasetConverter(test_path, 0)
+        df = self.spark.createDataFrame([(1, 2), (4, 5)], ["col1", "col2"])
+        converter = make_spark_converter(df, 'file:///tmp/123')
+        local_path = converter.cache_file_path[7:]
+        self.assertTrue(os.path.exists(local_path))
         converter.delete()
-        self.assertFalse(os.path.exists(test_path))
+        self.assertFalse(os.path.exists(local_path))
 
     def test_atexit(self):
         cache_dir = "/tmp/123"
@@ -88,8 +84,7 @@ class TfConverterTest(unittest.TestCase):
             import os
             spark = SparkSession.builder.getOrCreate()
             df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
-            converter = make_spark_converter(df, '/tmp/123')
-            assert(os.path.exists(converter.cache_file_path))
+            converter = make_spark_converter(df, 'file:///tmp/123')
             f = open("/tmp/123/output", "w")
             f.write(converter.cache_file_path)
             f.close()
@@ -104,7 +99,7 @@ class TfConverterTest(unittest.TestCase):
 
     @staticmethod
     def _get_compression_type(data_path):
-        files = os.listdir(data_path)
+        files = os.listdir(data_path[7:])
         pq_files = list(filter(lambda x: x.endswith('.parquet'), files))
         filename_splits = pq_files[0].split('.')
         if len(filename_splits) == 2:

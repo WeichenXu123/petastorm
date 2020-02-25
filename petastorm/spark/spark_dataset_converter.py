@@ -1,18 +1,37 @@
+import atexit
+import os
+import pyarrow
+import uuid
+import shutil
+
 from petastorm import make_batch_reader
+from petastorm.fs_utils import FilesystemResolver
+from petastorm.reader import normalize_data_url
 from petastorm.tf_utils import make_petastorm_dataset
 from pyspark.sql.session import SparkSession
 
-import atexit
-import os
-import shutil
-import uuid
 
-DEFAULT_CACHE_DIR = "/tmp/spark-converter"
+DEFAULT_CACHE_DIR = "file:///tmp/spark-converter"
 ROW_GROUP_SIZE = 32 * 1024 * 1024
 
 
 def _get_spark_session():
     return SparkSession.builder.getOrCreate()
+
+
+def _delete_cache_data(dataset_url):
+    """
+    Get fs handler from java gateway
+    :return:
+    """
+    hdfs_driver = 'libhdfs3'
+    dataset_url = normalize_data_url(dataset_url, hdfs_driver)
+    resolver = FilesystemResolver(dataset_url, hdfs_driver)
+    fs = resolver.filesystem()
+    if isinstance(fs, pyarrow.LocalFileSystem):
+        shutil.rmtree(dataset_url[7:], ignore_errors=True)
+    else:
+        fs.delete(dataset_url)
 
 
 class SparkDatasetConverter(object):
@@ -34,27 +53,20 @@ class SparkDatasetConverter(object):
         return self.dataset_size
 
     def make_tf_dataset(self):
-        # TODO: make data_uri support both local fs and hdfs
-        #   1. if cache_file_path is local path, convert it into "file:///..."
-        #   2. if cache_file_path is hdfs path: "hdfs:/...", keep it unchanged
-        #   3. if other cases, raise error.
-        data_uri = "file://" + self.cache_file_path
-        return tf_dataset_context_manager(data_uri)
+        return tf_dataset_context_manager(self.cache_file_path)
 
     def delete(self):
         """
         Delete cache files at self.cache_file_path.
         """
-        # TODO:
-        #   make it support both local fs and hdfs
-        shutil.rmtree(self.cache_file_path, ignore_errors=True)
+        _delete_cache_data(self.cache_file_path)
 
 
 class tf_dataset_context_manager:
 
     def __init__(self, data_uri):
         """
-        :param reader: A :class:`petastorm.reader.Reader` object.
+        :param data_uri: A string specifying the data URI.
         """
         self.reader = make_batch_reader(data_uri)
         self.dataset = make_petastorm_dataset(self.reader)
@@ -85,7 +97,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression_
         .option("compression", compression_codec) \
         .option("parquet.block.size", row_group_size) \
         .parquet(save_to_dir)
-    atexit.register(shutil.rmtree, save_to_dir, True)
+    atexit.register(_delete_cache_data, save_to_dir)
 
     return save_to_dir
 
