@@ -101,3 +101,28 @@ class TfConverterTest(unittest.TestCase):
         with open(os.path.join(cache_dir, "output")) as f:
             cache_file_path = f.read()
         self.assertFalse(os.path.exists(cache_file_path))
+
+    @staticmethod
+    def _get_compression_type(data_path):
+        files = os.listdir(data_path)
+        pq_files = list(filter(lambda x: x.endswith('.parquet'), files))
+        filename_splits = pq_files[0].split('.')
+        if len(filename_splits) == 2:
+            return "uncompressed"
+        else:
+            return filename_splits[1]
+
+    def test_compression(self):
+        df1 = self.spark.range(10)
+        old_compression = self.spark.conf.get("spark.sql.parquet.compression.codec")
+
+        for compression in [None, "snappy", "gzip"]:
+            converter1 = make_spark_converter(df1, compression=compression)
+            self.assertEqual(old_compression.lower(),
+                             self.spark.conf.get("spark.sql.parquet.compression.codec").lower())
+            if compression is None:
+                expected_compression = "uncompressed"
+            else:
+                expected_compression = compression
+            self.assertEqual(expected_compression,
+                             self._get_compression_type(converter1.cache_file_path).lower())
