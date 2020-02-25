@@ -116,7 +116,7 @@ def _cache_df_or_retrieve_cache_path(df, parent_cache_dir, row_group_size, compr
                     meta.df_plan.sameResult(df_plan):
                 return meta.data_path
         # do not find cached dataframe, start materializing.
-        cached_df_meta = CachedDataFrameMeta(
+        cached_df_meta = CachedDataFrameMeta.create_cached_dataframe(
             df, parent_cache_dir, row_group_size, compression_codec)
         _cache_df_meta_list.append(cached_df_meta)
         return cached_df_meta.data_path
@@ -140,8 +140,8 @@ def _materialize_df(df, parent_cache_dir, row_group_size, compression_codec):
 def make_spark_converter(
         df,
         cache_dir=None,
-        compression=None,
-        parquet_row_group_size=ROW_GROUP_SIZE):
+        parquet_row_group_size=ROW_GROUP_SIZE,
+        compression=None):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object. It will materialize
     a spark dataframe to a `cache_dir` or a default cache directory.
