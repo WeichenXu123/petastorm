@@ -127,7 +127,6 @@ def _materialize_df(df, parent_cache_dir, row_group_size, compression_codec):
 
     df.write \
         .option("compression", compression_codec) \
-    df.write.mode("overwrite") \
         .option("parquet.block.size", row_group_size) \
         .parquet(save_to_dir)
 
