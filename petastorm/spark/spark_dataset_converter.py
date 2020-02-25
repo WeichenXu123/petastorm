@@ -64,21 +64,20 @@ def _get_df_plan(df):
 
 class CachedDataFrameMeta(object):
 
-    def __init__(self, df, parent_cache_dir, row_group_size, compression):
+    def __init__(self, df, parent_cache_dir, row_group_size):
+        self.row_group_size = row_group_size
         # Note: the metadata will hold dataframe plan, but it won't
         # hold the dataframe object (dataframe plan will not reference dataframe object),
         # This means the dataframe can be released by spark gc.
         self.df_plan = _get_df_plan
-        self.row_group_size = row_group_size
-        self.compression = compression
-        self.data_path = _materialize_df(df, parent_cache_dir, row_group_size, compression)
+        self.data_path = _materialize_df(df, parent_cache_dir, row_group_size)
 
 
 _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
 
 
-def _cache_df_or_retrieve_cache_path(df, parent_cache_dir, row_group_size, compression):
+def _cache_df_or_retrieve_cache_path(df, parent_cache_dir, row_group_size):
     """
     Check whether the df is cached.
     If so, return the existing cache file path.
@@ -86,34 +85,26 @@ def _cache_df_or_retrieve_cache_path(df, parent_cache_dir, row_group_size, compr
     Use atexit to delete the cache before the python interpreter exits.
     :param df:               A :class:`DataFrame` object.
     :param parent_cache_dir: A string denoting the directory for the saved parquet file.
-    :param compression:      Compression type for materializing dataframe
     :return:                 A string denoting the path of the saved parquet file.
     """
     # TODO:
     #  1. Add corrupted parquet files checking
     #  2. Improve the global lock by fine-grained locks
-    #  3. Improve the cache list by hash table:
-    #       Note we need use hash(df_plan + row_group_size + compression_type)
+    #  3. Improve the cache list by hash table (Note we need use hash(df_plan + row_group_size)
     with _cache_df_meta_list_lock:
         df_plan = _get_df_plan(df)
         for meta in _cache_df_meta_list:
-            if meta.row_group_size == row_group_size and \
-                    meta.df_plan.sameResult(df_plan) and \
-                    meta.compression == compression:
+            if meta.row_group_size == row_group_size and meta.df_plan.sameResult(df_plan):
                 return meta.data_path
         # do not find cached dataframe, start materializing.
-        cached_df_meta = CachedDataFrameMeta(
-            df, parent_cache_dir, row_group_size, compression)
+        cached_df_meta = CachedDataFrameMeta(df, parent_cache_dir, row_group_size)
         _cache_df_meta_list.append(cached_df_meta)
         return cached_df_meta.data_path
 
 
-def _materialize_df(df, parent_cache_dir, row_group_size, compression):
+def _materialize_df(df, parent_cache_dir, row_group_size):
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(parent_cache_dir, uuid_str)
-
-    SparkSession.builder.getOrCreate().conf.set(
-        "spark.sql.parquet.compression.codec", compression)
     df.write.mode("overwrite") \
         .option("parquet.block.size", row_group_size) \
         .parquet(save_to_dir)
@@ -126,11 +117,7 @@ def _materialize_df(df, parent_cache_dir, row_group_size, compression):
     return save_to_dir
 
 
-def make_spark_converter(
-        df,
-        cache_dir=None,
-        compression=None,
-        parquet_row_group_size=ROW_GROUP_SIZE):
+def make_spark_converter(df, cache_dir=None, row_group_size=ROW_GROUP_SIZE):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object. It will materialize
     a spark dataframe to a `cache_dir` or a default cache directory.
@@ -142,9 +129,7 @@ def make_spark_converter(
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
-    :param compression: Specify compression type. Default None.
-                      If None, will automatically choose the best way.
-    :param parquet_row_group_size: An int denoting the number of bytes in a parquet row group.
+    :param row_group_size: An int denoting the number of bytes in a parquet row group.
 
     :return: a :class:`SparkDatasetConverter` object that holds the materialized dataframe and
             can be used to make one or more tensorflow datasets or torch dataloaders.
@@ -153,13 +138,6 @@ def make_spark_converter(
     if cache_dir is None:
         cache_dir = spark.conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
-
-    if compression is None:
-        # TODO: Improve default behavior to be automatically choosing the best way.
-        compression = "uncompressed"
-
-    cache_file_path = _cache_df_or_retrieve_cache_path(
-        df, cache_dir, parquet_row_group_size, compression)
+    cache_file_path = _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size)
     dataset_size = spark.read.parquet(cache_file_path).count()
-
     return SparkDatasetConverter(cache_file_path, dataset_size)
