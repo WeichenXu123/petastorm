@@ -74,7 +74,7 @@ def _get_df_plan(df):
 
 class CachedDataFrameMeta(object):
 
-    def __init__(self, df, parent_cache_dir, row_group_size, compression_codec):
+    def __init__(self, df, row_group_size, compression_codec):
         self.row_group_size = row_group_size
         self.compression_codec = compression_codec
         # Note: the metadata will hold dataframe plan, but it won't
@@ -85,7 +85,7 @@ class CachedDataFrameMeta(object):
 
     @classmethod
     def create_cached_dataframe(df, parent_cache_dir, row_group_size, compression_codec):
-        meta = CachedDataFrameMeta(df, parent_cache_dir, row_group_size, compression_codec)
+        meta = CachedDataFrameMeta(df, row_group_size, compression_codec)
         meta.data_path = _materialize_df(
             df, parent_cache_dir, row_group_size, compression_codec)
         return meta
