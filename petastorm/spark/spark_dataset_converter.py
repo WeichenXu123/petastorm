@@ -10,7 +10,9 @@ import uuid
 DEFAULT_CACHE_DIR = "/tmp/spark-converter"
 ROW_GROUP_SIZE = 32 * 1024 * 1024
 
-_spark_session = SparkSession.builder.getOrCreate()
+
+def _get_spark_session():
+    return SparkSession.builder.getOrCreate()
 
 
 class SparkDatasetConverter(object):
@@ -73,9 +75,10 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(cache_dir, uuid_str)
 
-    old_compression = _spark_session.conf.get("spark.sql.parquet.compression.codec")
+    old_compression = _get_spark_session() \
+        .conf.get("spark.sql.parquet.compression.codec")
 
-    _spark_session.conf.set(
+    _get_spark_session().conf.set(
         "spark.sql.parquet.compression.codec", compression)
 
     try:
@@ -86,7 +89,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
 
     finally:
         # Restore compression setting.
-        _spark_session.conf.set(
+        _get_spark_session().conf.set(
             "spark.sql.parquet.compression.codec", old_compression)
 
     # remove _xxx files, which will break `pyarrow.parquet` loading
@@ -120,7 +123,7 @@ def make_spark_converter(
             can be used to make one or more tensorflow datasets or torch dataloaders.
     """
     if cache_dir is None:
-        cache_dir = _spark_session.conf \
+        cache_dir = _get_spark_session().conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
 
     if compression is None:
@@ -128,5 +131,5 @@ def make_spark_converter(
         compression = "uncompressed"
     cache_file_path = _cache_df_or_retrieve_cache_path(
         df, cache_dir, parquet_row_group_size, compression)
-    dataset_size = _spark_session.read.parquet(cache_file_path).count()
+    dataset_size = _get_spark_session().read.parquet(cache_file_path).count()
     return SparkDatasetConverter(cache_file_path, dataset_size)
