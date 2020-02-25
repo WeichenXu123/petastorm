@@ -84,8 +84,8 @@ class CachedDataFrameMeta(object):
         self.data_path = None
 
     @classmethod
-    def create_cached_dataframe(df, parent_cache_dir, row_group_size, compression_codec):
-        meta = CachedDataFrameMeta(df, row_group_size, compression_codec)
+    def create_cached_dataframe(cls, df, parent_cache_dir, row_group_size, compression_codec):
+        meta = cls(df, row_group_size, compression_codec)
         meta.data_path = _materialize_df(
             df, parent_cache_dir, row_group_size, compression_codec)
         return meta
