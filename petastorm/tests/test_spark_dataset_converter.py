@@ -114,15 +114,15 @@ class TfConverterTest(unittest.TestCase):
 
     def test_compression(self):
         df1 = self.spark.range(10)
-        old_compression = self.spark.conf.get("spark.sql.parquet.compression.codec")
 
-        for compression in [None, "snappy", "gzip"]:
-            converter1 = make_spark_converter(df1, compression=compression)
-            self.assertEqual(old_compression.lower(),
-                             self.spark.conf.get("spark.sql.parquet.compression.codec").lower())
-            if compression is None:
-                expected_compression = "uncompressed"
-            else:
-                expected_compression = compression
-            self.assertEqual(expected_compression,
-                             self._get_compression_type(converter1.cache_file_path).lower())
+        converter1 = make_spark_converter(df1)
+        self.assertEqual("uncompressed",
+                         self._get_compression_type(converter1.cache_file_path).lower())
+
+        converter2 = make_spark_converter(df1, compression=False)
+        self.assertEqual("uncompressed",
+                         self._get_compression_type(converter2.cache_file_path).lower())
+
+        converter2 = make_spark_converter(df1, compression=True)
+        self.assertEqual("snappy",
+                         self._get_compression_type(converter2.cache_file_path).lower())

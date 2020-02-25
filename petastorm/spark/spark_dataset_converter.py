@@ -61,7 +61,7 @@ class tf_dataset_context_manager:
         self.reader.join()
 
 
-def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression):
+def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression_codec):
     """
     Check whether the df is cached.
     If so, return the existing cache file path.
@@ -69,33 +69,18 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size, compression)
     Use atexit to delete the cache before the python interpreter exits.
     :param df:        A :class:`DataFrame` object.
     :param cache_dir: A string denoting the directory for the saved parquet file.
-    :param compression: A string specifying the compression type.
+    :param compression_codec: Specify compression codec.
     :return:          A string denoting the path of the saved parquet file.
     """
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(cache_dir, uuid_str)
 
-    old_compression = _get_spark_session() \
-        .conf.get("spark.sql.parquet.compression.codec")
+    df.write \
+        .option("compression", compression_codec) \
+        .option("parquet.block.size", row_group_size) \
+        .parquet(save_to_dir)
+    atexit.register(shutil.rmtree, save_to_dir, True)
 
-    _get_spark_session().conf.set(
-        "spark.sql.parquet.compression.codec", compression)
-
-    try:
-        df.write \
-            .option("parquet.block.size", row_group_size) \
-            .parquet(save_to_dir)
-        atexit.register(shutil.rmtree, save_to_dir, True)
-
-    finally:
-        # Restore compression setting.
-        _get_spark_session().conf.set(
-            "spark.sql.parquet.compression.codec", old_compression)
-
-    # remove _xxx files, which will break `pyarrow.parquet` loading
-    underscore_files = [f for f in os.listdir(save_to_dir) if f.startswith("_")]
-    for f in underscore_files:
-        os.remove(os.path.join(save_to_dir, f))
     return save_to_dir
 
 
@@ -115,7 +100,7 @@ def make_spark_converter(
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
-    :param compression: Specify compression type. Default None.
+    :param compression: True or False, specify whether to apply compression. Default None.
                         If None, will automatically choose the best way.
     :param parquet_row_group_size: An int denoting the number of bytes in a parquet row group.
 
@@ -128,8 +113,13 @@ def make_spark_converter(
 
     if compression is None:
         # TODO: Improve default behavior to be automatically choosing the best way.
-        compression = "uncompressed"
+        compression_codec = "uncompressed"
+    elif compression:
+        compression_codec = "snappy"
+    else:
+        compression_codec = "uncompressed"
+
     cache_file_path = _cache_df_or_retrieve_cache_path(
-        df, cache_dir, parquet_row_group_size, compression)
+        df, cache_dir, parquet_row_group_size, compression_codec)
     dataset_size = _get_spark_session().read.parquet(cache_file_path).count()
     return SparkDatasetConverter(cache_file_path, dataset_size)
