@@ -90,6 +90,7 @@ class CachedDataFrameMeta(object):
             df, parent_cache_dir, row_group_size, compression_codec)
         return meta
 
+
 _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
 
