@@ -1,7 +1,7 @@
 from pathlib import Path
 from urllib.parse import urlparse
 
-from petastorm.spark.spark_dataset_converter import make_spark_converter
+from petastorm.spark.spark_dataset_converter import make_spark_converter, _check_and_add_scheme
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
     BooleanType, FloatType, ShortType, IntegerType, LongType, DoubleType, StringType, BinaryType, ByteType
@@ -56,18 +56,18 @@ class TfConverterTest(unittest.TestCase):
                         actual_ele = actual_ele.decode()
                     if col == "bin_col":
                         actual_ele = bytearray(actual_ele)
-                    self.assertEqual(actual_ele, expected_ele)
+                    self.assertEqual(expected_ele, actual_ele)
 
-            self.assertEqual(len(converter), len(expected_df))
+            self.assertEqual(len(expected_df), len(converter))
 
-        self.assertEqual(ts.bool_col.dtype.type, np.bool_, "Boolean type column is not inferred correctly.")
-        self.assertEqual(ts.float_col.dtype.type, np.float32, "Float type column is not inferred correctly.")
-        self.assertEqual(ts.double_col.dtype.type, np.float64, "Double type column is not inferred correctly.")
-        self.assertEqual(ts.short_col.dtype.type, np.int16, "Short type column is not inferred correctly.")
-        self.assertEqual(ts.int_col.dtype.type, np.int32, "Integer type column is not inferred correctly.")
-        self.assertEqual(ts.long_col.dtype.type, np.int64, "Long type column is not inferred correctly.")
-        self.assertEqual(ts.str_col.dtype.type, np.object_, "String type column is not inferred correctly.")
-        self.assertEqual(ts.bin_col.dtype.type, np.object_, "Binary type column is not inferred correctly.")
+        self.assertEqual(np.bool_, ts.bool_col.dtype.type, "Boolean type column is not inferred correctly.")
+        self.assertEqual(np.float32, ts.float_col.dtype.type, "Float type column is not inferred correctly.")
+        self.assertEqual(np.float64, ts.double_col.dtype.type, "Double type column is not inferred correctly.")
+        self.assertEqual(np.int16, ts.short_col.dtype.type, "Short type column is not inferred correctly.")
+        self.assertEqual(np.int32, ts.int_col.dtype.type, "Integer type column is not inferred correctly.")
+        self.assertEqual(np.int64, ts.long_col.dtype.type, "Long type column is not inferred correctly.")
+        self.assertEqual(np.object_, ts.str_col.dtype.type, "String type column is not inferred correctly.")
+        self.assertEqual(np.object_, ts.bin_col.dtype.type, "Binary type column is not inferred correctly.")
 
     def test_delete(self):
         df = self.spark.createDataFrame([(1, 2), (4, 5)], ["col1", "col2"])
@@ -94,7 +94,7 @@ class TfConverterTest(unittest.TestCase):
         code_str = "; ".join(line.strip() for line in lines.strip().splitlines())
         self.assertTrue(os.path.exists(cache_dir))
         ret_code = subprocess.call(["python", "-c", code_str])
-        self.assertEqual(ret_code, 0)
+        self.assertEqual(0, ret_code)
         with open(os.path.join(cache_dir, "output")) as f:
             cache_file_path = f.read()
         self.assertFalse(os.path.exists(cache_file_path))
@@ -143,3 +143,20 @@ class TfConverterTest(unittest.TestCase):
         converter12 = make_spark_converter(df1, compression=True)
         converter22 = make_spark_converter(df1, compression=False)
         self.assertNotEqual(converter12.cache_file_path, converter22.cache_file_path)
+
+    def test_scheme(self):
+        url1 = "file:///tmp/123"
+        url2 = "/tmp/abc"
+        url3 = "hdfs:/host:port/path/dir"
+        url4 = "ftp://localhost:1234/home"
+        url5 = ""
+
+        self.assertEqual(url1, _check_and_add_scheme(url1))
+        self.assertEqual("file://" + url2, _check_and_add_scheme(url2))
+        self.assertEqual(url3, _check_and_add_scheme(url3))
+        with self.assertRaises(NotImplementedError) as cm:
+            _check_and_add_scheme(url4)
+        self.assertEqual("Scheme ftp is not supported.", str(cm.exception))
+        with self.assertRaises(NotImplementedError) as cm:
+            _check_and_add_scheme(url5)
+        self.assertEqual("Scheme  is not supported.", str(cm.exception))

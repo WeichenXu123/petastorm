@@ -19,16 +19,17 @@ def _get_spark_session():
     return SparkSession.builder.getOrCreate()
 
 
-def _standardize_path(data_path):
+def _check_and_add_scheme(data_url):
     """
-
-    :param data_path: A string denoting the location of the cache files.
-                      Supported schemes: file:///..., /..., hdfs:/...
-    :return: A ParseResult of the data_path
+    Check the scheme in the url. Only HDFS and local file system are supported.
+    Add `file://` to the url starts with `/`.
+    :param data_url: A string denoting the location of the cache files.
+                     Supported schemes: file:///..., /..., hdfs:/...
+    :return: A string of the data_url with supported scheme.
     """
-    if data_path.startswith("/"):
-        data_path = "file://" + data_path
-    parsed = urlparse(data_path)
+    if data_url.startswith("/"):
+        data_url = "file://" + data_url
+    parsed = urlparse(data_url)
     if parsed.scheme not in {"file", "hdfs"}:
         raise NotImplementedError("Scheme {} is not supported.".format(parsed.scheme))
     return parsed.geturl()
@@ -67,7 +68,7 @@ class SparkDatasetConverter(object):
         :param cache_file_path: A string denoting the path to store the cache files.
         :param dataset_size: An int denoting the number of rows in the dataframe.
         """
-        self.cache_file_path = _standardize_path(cache_file_path)
+        self.cache_file_path = _check_and_add_scheme(cache_file_path)
         self.dataset_size = dataset_size
 
     def __len__(self):
@@ -169,7 +170,7 @@ def _materialize_df(df, parent_cache_dir, row_group_size, compression_codec):
 
 def make_spark_converter(
         df,
-        cache_dir=None,
+        cache_url=None,
         parquet_row_group_size=ROW_GROUP_SIZE,
         compression=None):
     """
@@ -179,7 +180,7 @@ def make_spark_converter(
     can be used to make one or more tensorflow datasets or torch dataloaders.
 
     :param df:        The :class:`DataFrame` object to be converted.
-    :param cache_dir: A string denoting the parent directory to store intermediate files.
+    :param cache_url: A string denoting the parent directory to store intermediate files.
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
@@ -190,10 +191,10 @@ def make_spark_converter(
     :return: a :class:`SparkDatasetConverter` object that holds the materialized dataframe and
             can be used to make one or more tensorflow datasets or torch dataloaders.
     """
-    if cache_dir is None:
-        cache_dir = _get_spark_session().conf \
+    if cache_url is None:
+        cache_url = _get_spark_session().conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
-    cache_dir = _standardize_path(cache_dir)  # early stopping for invalid cache_dir
+    cache_url = _check_and_add_scheme(cache_url)  # early stopping for invalid scheme
 
     if compression is None:
         # TODO: Improve default behavior to be automatically choosing the best way.
@@ -204,6 +205,6 @@ def make_spark_converter(
         compression_codec = "uncompressed"
 
     cache_file_path = _cache_df_or_retrieve_cache_path(
-        df, cache_dir, parquet_row_group_size, compression_codec)
+        df, cache_url, parquet_row_group_size, compression_codec)
     dataset_size = _get_spark_session().read.parquet(cache_file_path).count()
     return SparkDatasetConverter(cache_file_path, dataset_size)
