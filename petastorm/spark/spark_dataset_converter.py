@@ -1,13 +1,13 @@
+from pyarrow import LocalFileSystem
+
 from petastorm import make_batch_reader
 from petastorm.fs_utils import FilesystemResolver
-from petastorm.reader import normalize_data_url
 from petastorm.tf_utils import make_petastorm_dataset
 from pyspark.sql.session import SparkSession
+from six.moves.urllib.parse import urlparse
 
 import atexit
 import os
-import pyarrow
-import shutil
 import threading
 import uuid
 
@@ -19,19 +19,33 @@ def _get_spark_session():
     return SparkSession.builder.getOrCreate()
 
 
+def _standardize_path(data_path):
+    """
+
+    :param data_path: A string denoting the location of the cache files.
+                      Supported schemes: file:///..., /..., hdfs:/...
+    :return: A ParseResult of the data_path
+    """
+    if data_path.startswith("/"):
+        data_path = "file://" + data_path
+    parsed = urlparse(data_path)
+    if parsed.scheme not in {"file", "hdfs"}:
+        raise NotImplementedError("Scheme {} is not supported.".format(parsed.scheme))
+    return parsed.geturl()
+
+
 def _delete_cache_data(dataset_url):
     """
     Get fs handler from java gateway
     :return:
     """
     hdfs_driver = 'libhdfs3'
-    dataset_url = normalize_data_url(dataset_url, hdfs_driver)
     resolver = FilesystemResolver(dataset_url, hdfs_driver)
     fs = resolver.filesystem()
-    if isinstance(fs, pyarrow.LocalFileSystem):
-        shutil.rmtree(dataset_url[7:], ignore_errors=True)
-    else:
-        fs.delete(dataset_url)
+    if urlparse(dataset_url).scheme == "file":
+        assert(isinstance(fs, LocalFileSystem))
+    if fs.exists(dataset_url):
+        fs.delete(dataset_url, recursive=True)
 
 
 class SparkDatasetConverter(object):
@@ -46,7 +60,7 @@ class SparkDatasetConverter(object):
         :param cache_file_path: A string denoting the path to store the cache files.
         :param dataset_size: An int denoting the number of rows in the dataframe.
         """
-        self.cache_file_path = cache_file_path
+        self.cache_file_path = _standardize_path(cache_file_path)
         self.dataset_size = dataset_size
 
     def __len__(self):
@@ -64,11 +78,11 @@ class SparkDatasetConverter(object):
 
 class tf_dataset_context_manager:
 
-    def __init__(self, data_uri):
+    def __init__(self, data_url):
         """
-        :param data_uri: A string specifying the data URI.
+        :param data_url: A string specifying the data URI.
         """
-        self.reader = make_batch_reader(data_uri)
+        self.reader = make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader)
 
     def __enter__(self):
@@ -172,6 +186,7 @@ def make_spark_converter(
     if cache_dir is None:
         cache_dir = _get_spark_session().conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
+    cache_dir = _standardize_path(cache_dir)  # early stopping for invalid cache_dir
 
     if compression is None:
         # TODO: Improve default behavior to be automatically choosing the best way.
