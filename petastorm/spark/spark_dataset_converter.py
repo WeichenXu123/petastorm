@@ -40,10 +40,10 @@ def _check_and_add_scheme(dataset_url):
         Supported schemes: file:///..., /..., hdfs:/...
     :return: A string of the data_url with supported scheme.
     """
-    if dataset_url.startswith("/"):
-        dataset_url = "file://" + dataset_url
     parsed = urlparse(dataset_url)
-    if parsed.scheme not in {"file", "hdfs"}:
+    if parsed.scheme == '':
+        parsed = parsed._replace(scheme='file') # pylint: disable=protected-access
+    if parsed.scheme.lower() not in ["file", "hdfs"]:
         raise NotImplementedError(
             "Scheme {} is not supported.".format(parsed.scheme))
     return parsed.geturl()
