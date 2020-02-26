@@ -1,4 +1,6 @@
 from pathlib import Path
+from urllib.parse import urlparse
+
 from petastorm.spark.spark_dataset_converter import make_spark_converter
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
@@ -70,7 +72,7 @@ class TfConverterTest(unittest.TestCase):
     def test_delete(self):
         df = self.spark.createDataFrame([(1, 2), (4, 5)], ["col1", "col2"])
         converter = make_spark_converter(df, 'file:///tmp/123')
-        local_path = converter.cache_file_path[7:]
+        local_path = urlparse(converter.cache_file_path).path
         self.assertTrue(os.path.exists(local_path))
         converter.delete()
         self.assertFalse(os.path.exists(local_path))
@@ -99,7 +101,7 @@ class TfConverterTest(unittest.TestCase):
 
     @staticmethod
     def _get_compression_type(data_path):
-        files = os.listdir(data_path[7:])
+        files = os.listdir(urlparse(data_path).path)
         pq_files = list(filter(lambda x: x.endswith('.parquet'), files))
         filename_splits = pq_files[0].split('.')
         if len(filename_splits) == 2:
