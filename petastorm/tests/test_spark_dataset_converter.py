@@ -31,7 +31,7 @@ from petastorm.spark.spark_dataset_converter import make_spark_converter, \
 
 class TfConverterTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.spark = SparkSession.builder \
             .master("local[2]") \
             .appName("petastorm.spark tests") \
