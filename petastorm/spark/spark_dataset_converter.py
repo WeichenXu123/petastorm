@@ -52,7 +52,7 @@ def _delete_cache_data(dataset_url):
 
         if fs.exists(dataset_url):
             fs.delete(dataset_url, recursive=True)
-    except Exception as e:
+    except OSError as e:
         warnings.warn("Failed to delete files at {}\n{}".format(dataset_url, str(e)))
 
 
@@ -181,6 +181,7 @@ def make_spark_converter(
 
     :param df:        The :class:`DataFrame` object to be converted.
     :param cache_url: A string denoting the parent directory to store intermediate files.
+                      Supported schemes: file:///..., /..., hdfs:/...
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
