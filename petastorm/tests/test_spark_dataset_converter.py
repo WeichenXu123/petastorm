@@ -109,7 +109,7 @@ class TfConverterTest(unittest.TestCase):
         self.assertFalse(os.path.exists(local_path))
 
     def test_atexit(self):
-        cache_dir = "/tmp/" + str(uuid.uuid4())
+        cache_dir = "/tmp/spark_converter_test_atexit"
         os.makedirs(cache_dir)
         lines = """
         from petastorm.spark.spark_dataset_converter import make_spark_converter
@@ -117,8 +117,8 @@ class TfConverterTest(unittest.TestCase):
         import os
         spark = SparkSession.builder.getOrCreate()
         df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
-        converter = make_spark_converter(df, 'file:///tmp/123')
-        f = open("/tmp/123/output", "w")
+        converter = make_spark_converter(df, 'file:///tmp/spark_converter_test_atexit')
+        f = open("/tmp/spark_converter_test_atexit/output", "w")
         f.write(converter.cache_file_path)
         f.close()
         """
