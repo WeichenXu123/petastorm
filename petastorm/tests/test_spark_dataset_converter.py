@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import os
+from six.moves.urllib.parse import urlparse
 import subprocess
 import unittest
-from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
@@ -23,7 +23,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import BinaryType, BooleanType, ByteType, DoubleType, \
     FloatType, IntegerType, LongType, ShortType, StringType, StructField, \
     StructType
-from urllib.parse import urlparse
 
 from petastorm.spark.spark_dataset_converter import make_spark_converter, \
     _check_and_add_scheme
@@ -110,7 +109,7 @@ class TfConverterTest(unittest.TestCase):
 
     def test_atexit(self):
         cache_dir = "/tmp/123"
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        os.makedirs(cache_dir, exist_ok=True)
         lines = """
         from petastorm.spark.spark_dataset_converter import make_spark_converter
         from pyspark.sql import SparkSession
