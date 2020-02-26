@@ -45,14 +45,14 @@ def _delete_cache_data(dataset_url):
     fs = resolver.filesystem()
     parsed = urlparse(dataset_url)
     try:
-        if parsed.scheme == "file":
+        if parsed.scheme.lower() == "file":
             local_path = parsed.path
             if os.path.exists(local_path):
                 shutil.rmtree(local_path, ignore_errors=False)
-
-        if fs.exists(dataset_url):
-            fs.delete(dataset_url, recursive=True)
-    except OSError as e:
+        elif parsed.scheme.lower() == "hdfs":
+            if fs.exists(dataset_url):
+                fs.delete(dataset_url, recursive=True)
+    except BaseException as e:
         warnings.warn("Failed to delete files at {}\n{}".format(dataset_url, str(e)))
 
 
@@ -185,9 +185,9 @@ def make_spark_converter(
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
+    :param parquet_row_group_size: An int denoting the number of bytes in a parquet row group.
     :param compression: True or False, specify whether to apply compression. Default None.
                         If None, will automatically choose the best way.
-    :param parquet_row_group_size: An int denoting the number of bytes in a parquet row group.
 
     :return: a :class:`SparkDatasetConverter` object that holds the materialized dataframe and
             can be used to make one or more tensorflow datasets or torch dataloaders.

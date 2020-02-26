@@ -71,6 +71,7 @@ class TfConverterTest(unittest.TestCase):
 
     def test_delete(self):
         df = self.spark.createDataFrame([(1, 2), (4, 5)], ["col1", "col2"])
+        # TODO add test for hdfs url
         converter = make_spark_converter(df, 'file:///tmp/123')
         local_path = urlparse(converter.cache_file_path).path
         self.assertTrue(os.path.exists(local_path))
@@ -100,8 +101,8 @@ class TfConverterTest(unittest.TestCase):
         self.assertFalse(os.path.exists(cache_file_path))
 
     @staticmethod
-    def _get_compression_type(data_path):
-        files = os.listdir(urlparse(data_path).path)
+    def _get_compression_type(data_url):
+        files = os.listdir(urlparse(data_url).path)
         pq_files = list(filter(lambda x: x.endswith('.parquet'), files))
         filename_splits = pq_files[0].split('.')
         if len(filename_splits) == 2:
