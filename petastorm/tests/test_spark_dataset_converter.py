@@ -16,7 +16,6 @@ import os
 from six.moves.urllib.parse import urlparse
 import subprocess
 import unittest
-import uuid
 
 import numpy as np
 import tensorflow as tf
@@ -196,4 +195,3 @@ class TfConverterTest(unittest.TestCase):
         with self.assertRaises(NotImplementedError) as cm:
             _check_and_add_scheme(url4)
         self.assertEqual("Scheme ftp is not supported.", str(cm.exception))
-
