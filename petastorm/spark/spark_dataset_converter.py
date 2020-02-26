@@ -1,5 +1,3 @@
-from pyarrow import LocalFileSystem
-
 from petastorm import make_batch_reader
 from petastorm.fs_utils import FilesystemResolver
 from petastorm.tf_utils import make_petastorm_dataset
@@ -8,8 +6,10 @@ from six.moves.urllib.parse import urlparse
 
 import atexit
 import os
+import shutil
 import threading
 import uuid
+import warnings
 
 DEFAULT_CACHE_DIR = "file:///tmp/spark-converter"
 ROW_GROUP_SIZE = 32 * 1024 * 1024
@@ -42,10 +42,17 @@ def _delete_cache_data(dataset_url):
     hdfs_driver = 'libhdfs3'
     resolver = FilesystemResolver(dataset_url, hdfs_driver)
     fs = resolver.filesystem()
-    if urlparse(dataset_url).scheme == "file":
-        assert(isinstance(fs, LocalFileSystem))
-    if fs.exists(dataset_url):
-        fs.delete(dataset_url, recursive=True)
+    parsed = urlparse(dataset_url)
+    try:
+        if parsed.scheme == "file":
+            local_path = parsed.path
+            if os.path.exists(local_path):
+                shutil.rmtree(local_path, ignore_errors=False)
+
+        if fs.exists(dataset_url):
+            fs.delete(dataset_url, recursive=True)
+    except Exception as e:
+        warnings.warn("Failed to delete files at {}\n{}".format(dataset_url, str(e)))
 
 
 class SparkDatasetConverter(object):
