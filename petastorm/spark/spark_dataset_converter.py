@@ -42,7 +42,7 @@ def _check_and_add_scheme(dataset_url):
     """
     parsed = urlparse(dataset_url)
     if parsed.scheme == '':
-        parsed = parsed._replace(scheme='file') # pylint: disable=protected-access
+        parsed = parsed._replace(scheme='file')  # pylint: disable=protected-access
     if parsed.scheme.lower() not in ["file", "hdfs"]:
         raise NotImplementedError(
             "Scheme {} is not supported.".format(parsed.scheme))
