@@ -16,6 +16,7 @@ import os
 from six.moves.urllib.parse import urlparse
 import subprocess
 import unittest
+import uuid
 
 import numpy as np
 import tensorflow as tf
@@ -108,8 +109,8 @@ class TfConverterTest(unittest.TestCase):
         self.assertFalse(os.path.exists(local_path))
 
     def test_atexit(self):
-        cache_dir = "/tmp/123"
-        os.makedirs(cache_dir, exist_ok=True)
+        cache_dir = "/tmp/" + str(uuid.uuid4())
+        os.makedirs(cache_dir)
         lines = """
         from petastorm.spark.spark_dataset_converter import make_spark_converter
         from pyspark.sql import SparkSession
@@ -188,7 +189,6 @@ class TfConverterTest(unittest.TestCase):
         url2 = "/tmp/abc"
         url3 = "hdfs:/host:port/path/dir"
         url4 = "ftp://localhost:1234/home"
-        url5 = ""
 
         self.assertEqual(url1, _check_and_add_scheme(url1))
         self.assertEqual("file://" + url2, _check_and_add_scheme(url2))
@@ -196,6 +196,4 @@ class TfConverterTest(unittest.TestCase):
         with self.assertRaises(NotImplementedError) as cm:
             _check_and_add_scheme(url4)
         self.assertEqual("Scheme ftp is not supported.", str(cm.exception))
-        with self.assertRaises(NotImplementedError) as cm:
-            _check_and_add_scheme(url5)
-        self.assertEqual("Scheme  is not supported.", str(cm.exception))
+
