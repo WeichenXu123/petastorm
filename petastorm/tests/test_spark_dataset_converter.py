@@ -56,18 +56,15 @@ class TfConverterTest(unittest.TestCase):
              (False, 123.45, 0.987, 9, 908, 765, "petastorm",
               bytearray(b"\x0012345"), 127)],
             schema=schema).coalesce(1)
-        # If we use numPartition > 1, the order of the loaded dataset would
+        # If we use repartition, the order of the loaded dataset would
         # be non-deterministic.
         expected_df = df.collect()
 
         converter = make_spark_converter(df)
-        with converter.make_tf_dataset() as dataset:
+        with converter.make_tf_dataset(batch_size=converter.dataset_size) as dataset:
             iterator = dataset.make_one_shot_iterator()
             tensor = iterator.get_next()
             with tf.Session() as sess:
-                # TODO: we will improve the test once the batch_size argument
-                #  added.
-                # Now we only have one batch.
                 ts = sess.run(tensor)
 
         for i in range(converter.dataset_size):

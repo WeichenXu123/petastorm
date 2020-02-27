@@ -92,8 +92,14 @@ class SparkDatasetConverter(object):
     def __len__(self):
         return self.dataset_size
 
-    def make_tf_dataset(self):
-        return _tf_dataset_context_manager(self.cache_file_path)
+    def make_tf_dataset(self, batch_size=32):
+        """
+        Create a `tf.data.Dataset` based on the materialized spark dataframe.
+
+        :param batch_size: The batch size of the created `tf.data.Dataset`, default 32
+        :return context manager holding a `tf.data.Dataset`
+        """
+        return _tf_dataset_context_manager(self.cache_file_path, batch_size)
 
     def delete(self):
         """
@@ -108,11 +114,12 @@ class _tf_dataset_context_manager(object):
     :class:`petastorm.Reader`.
     """
 
-    def __init__(self, data_url):
+    def __init__(self, data_url, batch_size):
         """
         :param data_url: A string specifying the data URL.
         """
         self.data_url = data_url
+        self.batch_size = batch_size
 
     def __enter__(self):
         # Note: import locally for avoiding globally importing
@@ -121,7 +128,7 @@ class _tf_dataset_context_manager(object):
         import tensorflow as tf
         self.reader = make_batch_reader(self.data_url)
         self.dataset = make_petastorm_dataset(self.reader,
-                                              batch_size=tf.data.experimental.AUTOTUNE) \
+                                              batch_size=self.batch_size) \
             .prefetch(tf.data.experimental.AUTOTUNE)
         return self.dataset
 
