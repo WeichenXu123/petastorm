@@ -24,7 +24,8 @@ from pyspark.sql.types import BinaryType, BooleanType, ByteType, DoubleType, \
     FloatType, IntegerType, LongType, ShortType, StringType, StructField, \
     StructType
 
-from petastorm.spark import make_spark_converter, _check_and_add_scheme
+from petastorm.spark import make_spark_converter
+from petastorm.spark.spark_dataset_converter import _check_and_add_scheme
 
 
 class TfConverterTest(unittest.TestCase):
