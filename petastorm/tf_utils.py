@@ -345,9 +345,11 @@ def _set_shape_to_named_tuple(schema, fields, batched_output):
     return schema.make_namedtuple_tf(**fields_as_dict)
 
 
-def make_petastorm_dataset(reader):
+def make_petastorm_dataset(reader, batch_size=None):
     """Creates a `tensorflow.data.Dataset <https://www.tensorflow.org/api_docs/python/tf/data/Dataset>`_ object from
     a Petastorm :class:`~petastorm.reader.Reader`.
+
+    :param batch_size: Set batch size, if None, use original batch size (one batch per parquet row groups)
 
     The returned object can be used as any ``tf.data.Dataset`` with some limitations described below.
 
@@ -394,6 +396,8 @@ def make_petastorm_dataset(reader):
                 yield _sanitize_field_tf_types(row)
 
         flat_dataset = tf.data.Dataset.from_generator(dequeue_sample_impl, tuple(_schema_to_tf_dtypes(reader.schema)))
+        if batch_size is not None:
+            flat_dataset = flat_dataset.unbatch().batch(batch_size)
         named_tuple_dataset = flat_dataset \
             .map(reader.schema.make_namedtuple_tf) \
             .map(lambda row: _set_shape_to_named_tuple(reader.schema, row, reader.batched_output))

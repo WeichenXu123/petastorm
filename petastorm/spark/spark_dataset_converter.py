@@ -120,8 +120,8 @@ class _tf_dataset_context_manager(object):
         from petastorm.tf_utils import make_petastorm_dataset
         import tensorflow as tf
         self.reader = make_batch_reader(self.data_url)
-        self.dataset = make_petastorm_dataset(self.reader) \
-            .unbatch().batch(tf.data.experimental.AUTOTUNE) \
+        self.dataset = make_petastorm_dataset(self.reader,
+                                              batch_size=tf.data.experimental.AUTOTUNE) \
             .prefetch(tf.data.experimental.AUTOTUNE)
         return self.dataset
 

@@ -65,21 +65,22 @@ class TfConverterTest(unittest.TestCase):
             iterator = dataset.make_one_shot_iterator()
             tensor = iterator.get_next()
             with tf.Session() as sess:
-                ts = sess.run(tensor)
                 # TODO: we will improve the test once the batch_size argument
                 #  added.
                 # Now we only have one batch.
-            for i in range(converter.dataset_size):
-                for col in df.schema.names:
-                    actual_ele = getattr(ts, col)[i]
-                    expected_ele = expected_df[i][col]
-                    if col == "str_col":
-                        actual_ele = actual_ele.decode()
-                    if col == "bin_col":
-                        actual_ele = bytearray(actual_ele)
-                    self.assertEqual(expected_ele, actual_ele)
+                ts = sess.run(tensor)
 
-            self.assertEqual(len(expected_df), len(converter))
+        for i in range(converter.dataset_size):
+            for col in df.schema.names:
+                actual_ele = getattr(ts, col)[i]
+                expected_ele = expected_df[i][col]
+                if col == "str_col":
+                    actual_ele = actual_ele.decode()
+                if col == "bin_col":
+                    actual_ele = bytearray(actual_ele)
+                self.assertEqual(expected_ele, actual_ele)
+
+        self.assertEqual(len(expected_df), len(converter))
 
         self.assertEqual(np.bool_, ts.bool_col.dtype.type,
                          "Boolean type column is not inferred correctly.")
@@ -195,3 +196,18 @@ class TfConverterTest(unittest.TestCase):
         with self.assertRaises(NotImplementedError) as cm:
             _check_and_add_scheme(url4)
         self.assertEqual("Scheme ftp is not supported.", str(cm.exception))
+
+    def test_remote_run(self):
+        df1 = self.spark.range(100, 101)
+        converter1 = make_spark_converter(df1)
+
+        def map_fn(_):
+            with converter1.make_tf_dataset() as dataset:
+                iterator = dataset.make_one_shot_iterator()
+                tensor = iterator.get_next()
+                with tf.Session() as sess:
+                    ts = sess.run(tensor)
+            return ts.id[0]
+
+        result = self.spark.parallelize(range(1), 1).map(map_fn).collect[0]
+        self.assertEqual(result, 100)
