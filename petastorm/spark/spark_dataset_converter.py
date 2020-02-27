@@ -112,12 +112,17 @@ class _tf_dataset_context_manager(object):
         """
         :param data_url: A string specifying the data URL.
         """
-        from petastorm.tf_utils import make_petastorm_dataset
-
-        self.reader = make_batch_reader(data_url)
-        self.dataset = make_petastorm_dataset(self.reader)
+        self.data_url = data_url
 
     def __enter__(self):
+        # Note: import locally for avoiding globally importing
+        # multiple backends (tensorflow/pytorch) conflicts
+        from petastorm.tf_utils import make_petastorm_dataset
+        import tensorflow as tf
+        self.reader = make_batch_reader(self.data_url)
+        self.dataset = make_petastorm_dataset(self.reader) \
+            .unbatch().batch(tf.data.experimental.AUTOTUNE) \
+            .prefetch(tf.data.experimental.AUTOTUNE)
         return self.dataset
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
