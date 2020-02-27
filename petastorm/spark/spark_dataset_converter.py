@@ -125,7 +125,6 @@ class _tf_dataset_context_manager(object):
         # Note: import locally for avoiding globally importing
         # multiple backends (tensorflow/pytorch) conflicts
         from petastorm.tf_utils import make_petastorm_dataset
-        import tensorflow as tf
         self.reader = make_batch_reader(self.data_url)
         self.dataset = make_petastorm_dataset(self.reader, batch_size=self.batch_size)
         return self.dataset
