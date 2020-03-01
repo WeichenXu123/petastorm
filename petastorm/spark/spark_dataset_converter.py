@@ -135,6 +135,18 @@ _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
 
 
+def _is_sub_path(url1, url2):
+    """
+    Check whether url1 is a sub path of url2
+    """
+    parsed1 = urlparse(url1)
+    parsed2 = urlparse(url2)
+
+    return parsed1.scheme == parsed2.scheme and \
+        parsed1.netloc == parsed2.netloc and \
+        parsed1.path.rstrip('/').startswith(parsed2.path.rstrip('/'))
+
+
 def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
                                          parquet_row_group_size_bytes,
                                          compression_codec):
@@ -234,7 +246,7 @@ def make_spark_converter(
     else:
         compression_codec = "uncompressed"
 
-    cache_data_url = _cache_df_or_retrieve_cache_data_url(
+    dataset_cache_dir_url = _cache_df_or_retrieve_cache_data_url(
         df, cache_dir_url, parquet_row_group_size_bytes, compression_codec)
-    dataset_size = _get_spark_session().read.parquet(cache_data_url).count()
-    return SparkDatasetConverter(cache_data_url, dataset_size)
+    dataset_size = _get_spark_session().read.parquet(dataset_cache_dir_url).count()
+    return SparkDatasetConverter(dataset_cache_dir_url, dataset_size)

@@ -101,7 +101,7 @@ class TfConverterTest(unittest.TestCase):
         df = self.spark.createDataFrame([(1, 2), (4, 5)], ["col1", "col2"])
         # TODO add test for hdfs url
         converter = make_spark_converter(df, 'file:///tmp/123')
-        local_path = urlparse(converter.cache_file_path).path
+        local_path = urlparse(converter.cache_dir_url).path
         self.assertTrue(os.path.exists(local_path))
         converter.delete()
         self.assertFalse(os.path.exists(local_path))
@@ -117,7 +117,7 @@ class TfConverterTest(unittest.TestCase):
         df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
         converter = make_spark_converter(df, 'file:///tmp/spark_converter_test_atexit')
         f = open("/tmp/spark_converter_test_atexit/output", "w")
-        f.write(converter.cache_file_path)
+        f.write(converter.cache_dir_url)
         f.close()
         """
         code_str = "; ".join(
@@ -126,8 +126,8 @@ class TfConverterTest(unittest.TestCase):
         ret_code = subprocess.call(["python", "-c", code_str])
         self.assertEqual(0, ret_code)
         with open(os.path.join(cache_dir, "output")) as f:
-            cache_file_path = f.read()
-        self.assertFalse(os.path.exists(cache_file_path))
+            cache_dir_url = f.read()
+        self.assertFalse(os.path.exists(cache_dir_url))
 
     @staticmethod
     def _get_compression_type(data_url):
@@ -145,17 +145,17 @@ class TfConverterTest(unittest.TestCase):
         converter1 = make_spark_converter(df1)
         self.assertEqual("uncompressed",
                          self._get_compression_type(
-                             converter1.cache_file_path).lower())
+                             converter1.cache_dir_url).lower())
 
         converter2 = make_spark_converter(df1, compression=False)
         self.assertEqual("uncompressed",
                          self._get_compression_type(
-                             converter2.cache_file_path).lower())
+                             converter2.cache_dir_url).lower())
 
         converter2 = make_spark_converter(df1, compression=True)
         self.assertEqual("snappy",
                          self._get_compression_type(
-                             converter2.cache_file_path).lower())
+                             converter2.cache_dir_url).lower())
 
     def test_df_caching(self):
         df1 = self.spark.range(10)
@@ -164,23 +164,23 @@ class TfConverterTest(unittest.TestCase):
 
         converter1 = make_spark_converter(df1)
         converter2 = make_spark_converter(df2)
-        self.assertEqual(converter1.cache_file_path, converter2.cache_file_path)
+        self.assertEqual(converter1.cache_dir_url, converter2.cache_dir_url)
 
         converter3 = make_spark_converter(df3)
-        self.assertNotEqual(converter1.cache_file_path,
-                            converter3.cache_file_path)
+        self.assertNotEqual(converter1.cache_dir_url,
+                            converter3.cache_dir_url)
 
         converter11 = make_spark_converter(
             df1, parquet_row_group_size_bytes=8 * 1024 * 1024)
         converter21 = make_spark_converter(
             df1, parquet_row_group_size_bytes=16 * 1024 * 1024)
-        self.assertNotEqual(converter11.cache_file_path,
-                            converter21.cache_file_path)
+        self.assertNotEqual(converter11.cache_dir_url,
+                            converter21.cache_dir_url)
 
         converter12 = make_spark_converter(df1, compression=True)
         converter22 = make_spark_converter(df1, compression=False)
-        self.assertNotEqual(converter12.cache_file_path,
-                            converter22.cache_file_path)
+        self.assertNotEqual(converter12.cache_dir_url,
+                            converter22.cache_dir_url)
 
     def test_scheme(self):
         url1 = "/tmp/abc"
