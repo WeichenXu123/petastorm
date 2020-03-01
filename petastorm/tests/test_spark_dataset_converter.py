@@ -211,5 +211,5 @@ class TfConverterTest(unittest.TestCase):
                     ts = sess.run(tensor)
             return ts.id[0]
 
-        result = self.spark.parallelize(range(1), 1).map(map_fn).collect[0]
+        result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect[0]
         self.assertEqual(result, 100)
