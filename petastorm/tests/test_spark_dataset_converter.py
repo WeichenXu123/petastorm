@@ -24,7 +24,8 @@ from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
                                StringType, StructField, StructType)
 from six.moves.urllib.parse import urlparse
 
-from petastorm.spark.spark_dataset_converter import make_spark_converter
+from petastorm import make_spark_converter
+from petastorm.spark.spark_dataset_converter import _normalize_dir_url, _is_same_or_sub_url
 
 
 class TfConverterTest(unittest.TestCase):
@@ -182,6 +183,37 @@ class TfConverterTest(unittest.TestCase):
         self.assertNotEqual(converter12.cache_dir_url,
                             converter22.cache_dir_url)
 
+    def test_normalize_url(self):
+        with self.assertRaises(ValueError) as cm:
+            _normalize_dir_url('/a/b/c')
+        self.assertTrue('scheme-less' in str(cm.exception))
+
+        self.assertEqual(_normalize_dir_url('file:///a/b'), 'file:///a/b/')
+        self.assertEqual(_normalize_dir_url('file:///a//b'), 'file:///a/b/')
+
+    def test_df_private_caching(self):
+        self.assertTrue(_is_same_or_sub_url('file:///a/b/c/d', 'file:///a/b/c'))
+        self.assertTrue(_is_same_or_sub_url('hdfs:///a/b/c/d', 'hdfs:///a/b/c'))
+        self.assertTrue(_is_same_or_sub_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9000/a/b/c'))
+        self.assertTrue(_is_same_or_sub_url('file:///a/b/c', 'file:///a/b/c'))
+
+        self.assertFalse(_is_same_or_sub_url('file:///a/b/c/d', 'file:///a/b/cc'))
+        self.assertFalse(_is_same_or_sub_url('file:///a/b/c', 'file:///a/b/c/d'))
+        self.assertFalse(_is_same_or_sub_url('file:///a/b/c', 'hdfs:///a/b/c'))
+        self.assertFalse(_is_same_or_sub_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9001/a/b/c'))
+
+        df1 = self.spark.range(10)
+        df2 = self.spark.range(10)
+
+        converter1 = make_spark_converter(df1, cache_dir_url='file:///tmp/a1/a2')
+        converter2 = make_spark_converter(df2, cache_dir_url='file:///tmp/a1/a2')
+        converter3 = make_spark_converter(df2, cache_dir_url='file:///tmp/a1/')
+        converter4 = make_spark_converter(df2, cache_dir_url='file:///tmp/a1/a3')
+
+        self.assertEqual(converter1.cache_dir_url, converter2.cache_dir_url)
+        self.assertEqual(converter1.cache_dir_url, converter3.cache_dir_url)
+        self.assertNotEqual(converter1.cache_dir_url, converter4.cache_dir_url)
+
     def test_scheme(self):
         url1 = "/tmp/abc"
         url2 = "file:///tmp/123"
@@ -191,9 +223,7 @@ class TfConverterTest(unittest.TestCase):
             converter = make_spark_converter(df, url1)
             with converter.make_tf_dataset() as _:
                 pass
-        self.assertEqual("ERROR! A scheme-less dataset url () is no longer "
-                         "supported. Please prepend \"file://\" for local "
-                         "filesystem.", str(cm.exception))
+        self.assertTrue('scheme-less' in str(cm.exception))
 
         converter = make_spark_converter(df, url2)
         with converter.make_tf_dataset() as dataset:

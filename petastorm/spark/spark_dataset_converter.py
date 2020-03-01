@@ -135,16 +135,32 @@ _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
 
 
-def _is_sub_path(url1, url2):
+def _normalize_dir_url(dir_url):
     """
-    Check whether url1 is a sub path of url2
+    Normalize dir url, will do:
+    * check scheme, raise error if empty scheme
+    * convert the path to be abspath, remove redundunt '/' in path and add trailing '/'
+    """
+    parsed = urlparse(dir_url)
+    if not parsed.scheme:
+        raise ValueError(
+            'ERROR! A scheme-less directory url ({}) is no longer supported. '
+            'Please prepend "file://" for local filesystem.'.format(dir_url))
+    new_parsed = parsed._replace(path=os.path.abspath(parsed.path) + os.sep)
+    return new_parsed.geturl()
+
+
+def _is_same_or_sub_url(url1, url2):
+    """
+    Check whether url1 is the same or sub url of url2
+    Note: the url1 and url2 must be normalized first.
     """
     parsed1 = urlparse(url1)
     parsed2 = urlparse(url2)
 
     return parsed1.scheme == parsed2.scheme and \
         parsed1.netloc == parsed2.netloc and \
-        parsed1.path.rstrip('/').startswith(parsed2.path.rstrip('/'))
+        parsed1.path.startswith(parsed2.path)
 
 
 def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
@@ -172,8 +188,9 @@ def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
         for meta in _cache_df_meta_list:
             if meta.row_group_size == parquet_row_group_size_bytes and \
                     meta.compression_codec == compression_codec and \
-                    meta.df_plan.sameResult(df_plan):
-                return meta.data_path
+                    meta.df_plan.sameResult(df_plan) and \
+                    _is_same_or_sub_url(meta.cache_dir_url, parent_cache_dir_url):
+                return meta.cache_dir_url
         # do not find cached dataframe, start materializing.
         cached_df_meta = CachedDataFrameMeta.create_cached_dataframe(
             df, parent_cache_dir_url, parquet_row_group_size_bytes,
@@ -231,11 +248,7 @@ def make_spark_converter(
             "directory to store intermediate files, or set the spark config "
             "`petastorm.spark.converter.defaultCacheDirUrl`.")
 
-    scheme = urlparse(cache_dir_url).scheme
-    if not scheme:
-        raise ValueError(
-            'ERROR! A scheme-less dataset url ({}) is no longer supported. '
-            'Please prepend "file://" for local filesystem.'.format(scheme))
+    cache_dir_url = _normalize_dir_url(cache_dir_url)
 
     if compression is None:
         # TODO: Improve default behavior to be automatically choosing the
