@@ -199,7 +199,7 @@ class TfConverterTest(unittest.TestCase):
         with converter.make_tf_dataset() as dataset:
             self.assertIsNotNone(dataset)
 
-    def test_remote_run(self):
+    def test_pickling_remotely(self):
         df1 = self.spark.range(100, 101)
         converter1 = make_spark_converter(df1)
 
@@ -209,7 +209,7 @@ class TfConverterTest(unittest.TestCase):
                 tensor = iterator.get_next()
                 with tf.Session() as sess:
                     ts = sess.run(tensor)
-            return ts.id[0]
+            return getattr(ts, 'id')[0]
 
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect[0]
         self.assertEqual(result, 100)
