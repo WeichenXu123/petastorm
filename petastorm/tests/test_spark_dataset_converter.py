@@ -213,4 +213,3 @@ class TfConverterTest(unittest.TestCase):
 
         result = self.spark.parallelize(range(1), 1).map(map_fn).collect[0]
         self.assertEqual(result, 100)
-
