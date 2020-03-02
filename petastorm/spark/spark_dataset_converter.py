@@ -139,28 +139,30 @@ def _normalize_dir_url(dir_url):
     """
     Normalize dir url, will do:
     * check scheme, raise error if empty scheme
-    * convert the path to be abspath, remove redundunt '/' in path and add trailing '/'
+    * convert the path to be abspath, remove redundant '/' and trailing '/' in path
     """
     parsed = urlparse(dir_url)
     if not parsed.scheme:
         raise ValueError(
             'ERROR! A scheme-less directory url ({}) is no longer supported. '
             'Please prepend "file://" for local filesystem.'.format(dir_url))
-    new_parsed = parsed._replace(path=os.path.abspath(parsed.path) + os.sep)
+    new_parsed = parsed._replace(path=os.path.abspath(parsed.path))
     return new_parsed.geturl()
 
 
-def _is_same_or_sub_url(url1, url2):
+def _is_sub_url(url1, url2):
     """
-    Check whether url1 is the same or sub url of url2
-    Note: the url1 and url2 must be normalized first.
+    Check whether url1 is a sub directory of url2
     """
     parsed1 = urlparse(url1)
     parsed2 = urlparse(url2)
 
+    path1 = _normalize_dir_url(parsed1.path)
+    path2 = _normalize_dir_url(parsed2.path)
+
     return parsed1.scheme == parsed2.scheme and \
         parsed1.netloc == parsed2.netloc and \
-        parsed1.path.startswith(parsed2.path)
+        path1.startswith(path2 + os.sep)
 
 
 def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
@@ -189,7 +191,7 @@ def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
             if meta.row_group_size == parquet_row_group_size_bytes and \
                     meta.compression_codec == compression_codec and \
                     meta.df_plan.sameResult(df_plan) and \
-                    _is_same_or_sub_url(meta.cache_dir_url, parent_cache_dir_url):
+                    _is_sub_url(meta.cache_dir_url, parent_cache_dir_url):
                 return meta.cache_dir_url
         # do not find cached dataframe, start materializing.
         cached_df_meta = CachedDataFrameMeta.create_cached_dataframe(
