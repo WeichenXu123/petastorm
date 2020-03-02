@@ -25,7 +25,7 @@ from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_spark_converter
-from petastorm.spark.spark_dataset_converter import _normalize_dir_url, _is_sub_url
+from petastorm.spark.spark_dataset_converter import _normalize_dir_url, _is_sub_dir_url
 
 
 class TfConverterTest(unittest.TestCase):
@@ -188,19 +188,19 @@ class TfConverterTest(unittest.TestCase):
             _normalize_dir_url('/a/b/c')
         self.assertTrue('scheme-less' in str(cm.exception))
 
-        self.assertEqual(_normalize_dir_url('file:///a/b'), 'file:///a/b/')
-        self.assertEqual(_normalize_dir_url('file:///a//b'), 'file:///a/b/')
+        self.assertEqual(_normalize_dir_url('file:///a/b'), 'file:///a/b')
+        self.assertEqual(_normalize_dir_url('file:///a//b'), 'file:///a/b')
 
     def test_df_private_caching(self):
-        self.assertTrue(_is_sub_url('file:///a/b/c/d', 'file:///a/b/c'))
-        self.assertTrue(_is_sub_url('hdfs:///a/b/c/d', 'hdfs:///a/b/c'))
-        self.assertTrue(_is_sub_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9000/a/b/c'))
+        self.assertTrue(_is_sub_dir_url('file:///a/b/c/d', 'file:///a/b/c'))
+        self.assertTrue(_is_sub_dir_url('hdfs:///a/b/c/d', 'hdfs:///a/b/c'))
+        self.assertTrue(_is_sub_dir_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9000/a/b/c'))
 
-        self.assertFalse(_is_sub_url('file:///a/b/c', 'file:///a/b/c'))
-        self.assertFalse(_is_sub_url('file:///a/b/c/d', 'file:///a/b/cc'))
-        self.assertFalse(_is_sub_url('file:///a/b/c', 'file:///a/b/c/d'))
-        self.assertFalse(_is_sub_url('file:///a/b/c', 'hdfs:///a/b/c'))
-        self.assertFalse(_is_sub_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9001/a/b/c'))
+        self.assertFalse(_is_sub_dir_url('file:///a/b/c', 'file:///a/b/c'))
+        self.assertFalse(_is_sub_dir_url('file:///a/b/c/d', 'file:///a/b/cc'))
+        self.assertFalse(_is_sub_dir_url('file:///a/b/c', 'file:///a/b/c/d'))
+        self.assertFalse(_is_sub_dir_url('file:///a/b/c', 'hdfs:///a/b/c'))
+        self.assertFalse(_is_sub_dir_url('hdfs://nn1:9000/a/b/c/d', 'hdfs://nn1:9001/a/b/c'))
 
         df1 = self.spark.range(10)
         df2 = self.spark.range(10)

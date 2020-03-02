@@ -150,19 +150,19 @@ def _normalize_dir_url(dir_url):
     return new_parsed.geturl()
 
 
-def _is_sub_url(url1, url2):
+def _is_sub_dir_url(dir_url1, dir_url2):
     """
     Check whether url1 is a sub directory of url2
     """
+    url1 = _normalize_dir_url(dir_url1)
+    url2 = _normalize_dir_url(dir_url2)
+
     parsed1 = urlparse(url1)
     parsed2 = urlparse(url2)
 
-    path1 = _normalize_dir_url(parsed1.path)
-    path2 = _normalize_dir_url(parsed2.path)
-
     return parsed1.scheme == parsed2.scheme and \
         parsed1.netloc == parsed2.netloc and \
-        path1.startswith(path2 + os.sep)
+        parsed1.path.startswith(parsed2.path + os.sep)
 
 
 def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
@@ -191,7 +191,7 @@ def _cache_df_or_retrieve_cache_data_url(df, parent_cache_dir_url,
             if meta.row_group_size == parquet_row_group_size_bytes and \
                     meta.compression_codec == compression_codec and \
                     meta.df_plan.sameResult(df_plan) and \
-                    _is_sub_url(meta.cache_dir_url, parent_cache_dir_url):
+                    _is_sub_dir_url(meta.cache_dir_url, parent_cache_dir_url):
                 return meta.cache_dir_url
         # do not find cached dataframe, start materializing.
         cached_df_meta = CachedDataFrameMeta.create_cached_dataframe(
