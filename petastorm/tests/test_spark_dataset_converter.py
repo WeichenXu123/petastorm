@@ -209,7 +209,7 @@ class TfConverterTest(unittest.TestCase):
                 tensor = iterator.get_next()
                 with tf.Session() as sess:
                     ts = sess.run(tensor)
-            return ts[0][0]
+            return getattr(ts, 'id')[0]
 
-        result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect[0]
+        result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
