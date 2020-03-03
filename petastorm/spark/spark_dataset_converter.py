@@ -121,7 +121,7 @@ class _tf_dataset_context_manager(object):
 
         self.reader = make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader) \
-            .flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x)) \
+            .flat_map(tf.data.Dataset.from_tensor_slices) \
             .batch(batch_size=batch_size)
 
     def __enter__(self):
