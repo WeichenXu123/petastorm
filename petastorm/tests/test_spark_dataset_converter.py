@@ -239,7 +239,20 @@ class TfConverterTest(unittest.TestCase):
                 tensor = iterator.get_next()
                 with tf.Session() as sess:
                     ts = sess.run(tensor)
-            return getattr(ts, 'id')[0]
+            return ts.id[0]
 
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
+
+    def test_tf_dataset_batch_size(self):
+        df1 = self.spark.range(100)
+
+        batch_size = 30
+        converter1 = make_spark_converter(df1)
+
+        with converter1.make_tf_dataset(batch_size) as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+        self.assertEqual(len(ts.id), batch_size)
