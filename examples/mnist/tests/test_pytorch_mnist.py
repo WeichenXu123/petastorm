@@ -31,6 +31,7 @@ pytest.skip('skip pytorch mnist test, the mnist downloading is flaky')
 
 # Set test image sizes and number of mock nouns/variants
 
+
 @pytest.fixture(scope="session")
 def generate_mnist_dataset(small_mock_mnist_data, tmpdir_factory):
     # Using parquet_files_count to speed up the test
