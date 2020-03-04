@@ -101,10 +101,10 @@ class SparkDatasetConverter(object):
         :param batch_size: batch size of the generated tf.data.dataset
         :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
                          if available, if 0, disable prefetch. Default is None.
-        :param preproc_fn: preprocessing function
-        :param preproc_parallelism: parallelism for preprocessing function. If None,
-                                    will autotune best parallelism if available. If tf do
-                                    not support autotune, fallback to 1.
+        :param preproc_fn: preprocessing function, will apply on batched tf tensor.
+        :param preproc_parallelism: parallelism for preprocessing function.
+                                    If None, will autotune best parallelism if available.
+                                    If tf do not support autotune, fallback to 1.
 
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
@@ -153,7 +153,14 @@ class _tf_dataset_context_manager(object):
         self.reader = make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader) \
             .flat_map(tf.data.Dataset.from_tensor_slices) \
-            .batch(batch_size=batch_size)
+
+        self.dataset = self.dataset.batch(batch_size=batch_size)
+
+        if support_prefetch_and_autotune():
+            if prefetch is None:
+                prefetch = tf.data.experimental.AUTOTUNE
+            if prefetch != 0:
+                self.dataset = self.dataset.prefetch(prefetch)
 
         if preproc_fn is not None:
             if preproc_parallelism is None:
@@ -162,12 +169,6 @@ class _tf_dataset_context_manager(object):
                 else:
                     preproc_parallelism = 1
             self.dataset = self.dataset.map(preproc_fn, preproc_parallelism)
-
-        if support_prefetch_and_autotune():
-            if prefetch is None:
-                prefetch = tf.data.experimental.AUTOTUNE
-            if prefetch != 0:
-                self.dataset = self.dataset.prefetch(prefetch)
 
     def __enter__(self):
         return self.dataset

@@ -19,9 +19,7 @@ import unittest
 import numpy as np
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
-                               FloatType, IntegerType, LongType, ShortType,
-                               StringType, StructField, StructType)
+from pyspark.sql.types import *
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_spark_converter
@@ -256,3 +254,22 @@ class TfConverterTest(unittest.TestCase):
             with tf.Session() as sess:
                 ts = sess.run(tensor)
         self.assertEqual(len(ts.id), batch_size)
+
+    def test_tf_dataset_preproc(self):
+        df1 = self.spark.createDataFrame(
+            [([1., 2., 3., 4., 5., 6.],),
+             ([4., 5., 6., 7., 8., 9.],)],
+            StructType([StructField(name='c1', dataType=ArrayType(DoubleType()))]))
+
+        converter1 = make_spark_converter(df1)
+
+        def preproc_fn(x):
+            return tf.reshape(x.c1, [-1, 3, 2]),
+
+        with converter1.make_tf_dataset(batch_size=2, preproc_fn=preproc_fn) as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+
+        self.assertEqual(ts[0].shape, (2, 3, 2))
