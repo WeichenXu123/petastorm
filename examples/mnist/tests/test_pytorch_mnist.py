@@ -27,8 +27,6 @@ from petastorm import make_reader, TransformSpec
 
 logging.basicConfig(level=logging.INFO)
 
-pytest.skip('skip pytorch mnist test, the mnist downloading is flaky')
-
 # Set test image sizes and number of mock nouns/variants
 
 
