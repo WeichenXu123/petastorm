@@ -19,7 +19,9 @@ import unittest
 import numpy as np
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import *
+from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType, DoubleType,
+                               FloatType, IntegerType, LongType, ShortType,
+                               StringType, StructField, StructType)
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_spark_converter
