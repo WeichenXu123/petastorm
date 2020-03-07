@@ -295,7 +295,7 @@ class CachedDataFrameMeta(object):
                    precision=precision)
         meta.cache_dir_url = _materialize_df(
             df,
-            parent_cache_dir=parent_cache_dir_url,
+            parent_cache_dir_url=parent_cache_dir_url,
             parquet_row_group_size_bytes=row_group_size,
             compression_codec=compression_codec,
             precision=precision)
