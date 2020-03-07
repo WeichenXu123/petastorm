@@ -94,13 +94,11 @@ def test_primitive(test_ctx):
                     actual_ele = actual_ele.decode()
                 if col == "bin_col":
                     actual_ele = bytearray(actual_ele)
-                assert expected_ele == actual_ele
-
-            if col == "float_col" or col == "double_col":
-                # Note that the default precision is float32
-                test_ctx.assertAlmostEqual(expected_ele, actual_ele, delta=1e-5)
-            else:
-                test_ctx.assertEqual(expected_ele, actual_ele)
+                if col == "float_col" or col == "double_col":
+                    # Note that the default precision is float32
+                    assert pytest.approx(expected_ele, rel=1e-6) == actual_ele
+                else:
+                    assert expected_ele == actual_ele
 
         assert len(expected_df) == len(converter)
 
@@ -300,10 +298,9 @@ def test_precision(test_ctx):
             ts = sess.run(tensor)
     assert np.float64 == ts.float_col.dtype.type
 
-    with test_ctx.assertRaises(ValueError) as cm:
+    with pytest.raises(ValueError, match="precision float16 is not supported. \
+            Use 'float32' or float64"):
         make_spark_converter(df, precision="float16")
-        test_ctx.assertIn("precision float16 is not supported. \
-            Use 'float32' or float64", str(cm.exception))
 
 
 def test_array(test_ctx):
