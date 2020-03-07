@@ -104,7 +104,8 @@ def test_primitive(test_ctx):
 
     assert np.bool_ == ts.bool_col.dtype.type
     assert np.float32 == ts.float_col.dtype.type
-    assert np.float64 == ts.double_col.dtype.type
+    # Default precision float32
+    assert np.float32 == ts.double_col.dtype.type
     assert np.int16 == ts.short_col.dtype.type
     assert np.int32 == ts.int_col.dtype.type
     assert np.int64 == ts.long_col.dtype.type
