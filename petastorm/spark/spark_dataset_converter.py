@@ -143,8 +143,9 @@ class SparkDatasetConverter(object):
     def make_tf_dataset(self,
                         batch_size=32,
                         prefetch=None,
-                        preproc_fn=None,
-                        preproc_parallelism=None):
+                        num_epochs=None,
+                        preprocess_pandas_fn=None,
+                        **petastorm_reader_kwargs):
         """
         Make a tensorflow dataset.
 
@@ -155,10 +156,6 @@ class SparkDatasetConverter(object):
         :param batch_size: batch size of the generated tf.data.dataset
         :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
                          if available, if 0, disable prefetch. Default is None.
-        :param preproc_fn: preprocessing function, will apply on batched tf tensor.
-        :param preproc_parallelism: parallelism for preprocessing function.
-                                    If None, will autotune best parallelism if available.
-                                    If tf do not support autotune, fallback to 1.
 
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
@@ -168,8 +165,9 @@ class SparkDatasetConverter(object):
             self.cache_dir_url,
             batch_size=batch_size,
             prefetch=prefetch,
-            preproc_fn=preproc_fn,
-            preproc_parallelism=preproc_parallelism
+            num_epochs=num_epochs,
+            preprocess_pandas_fn=preprocess_pandas_fn,
+            petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
     def make_torch_dataloader(self):
@@ -203,22 +201,31 @@ class TFDatasetContextManager(object):
                  data_url,
                  batch_size,
                  prefetch,
-                 preproc_fn,
-                 preproc_parallelism):
+                 num_epochs,
+                 preprocess_pandas_fn,
+                 petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
         :param batch_size: batch size of the generated tf.data.dataset
         :param prefetch: prefetch for tf dataset
-        :param preproc_fn: preprocessing function
-        :param preproc_parallelism: parallelism for preprocessing function
         """
         from petastorm.tf_utils import make_petastorm_dataset
+        from petastorm.transform import TransformSpec
         import tensorflow as tf
 
         def support_prefetch_and_autotune():
             return LooseVersion(tf.__version__) >= LooseVersion('1.14')
 
-        self.reader = make_batch_reader(data_url)
+        if 'dataset_url' in petastorm_reader_kwargs:
+            raise ValueError('Cannot set dataset_url argument by yourself.')
+
+        if 'transform_spec' in petastorm_reader_kwargs:
+            raise ValueError('Cannot set transform_spec argument by yourself.')
+
+        petastorm_reader_kwargs['num_epochs'] = num_epochs
+        petastorm_reader_kwargs['transform_spec'] = TransformSpec(preprocess_pandas_fn)
+
+        self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
         self.dataset = make_petastorm_dataset(self.reader) \
             .flat_map(tf.data.Dataset.from_tensor_slices) \
 
@@ -229,14 +236,6 @@ class TFDatasetContextManager(object):
                 prefetch = tf.data.experimental.AUTOTUNE
             if prefetch != 0:
                 self.dataset = self.dataset.prefetch(prefetch)
-
-        if preproc_fn is not None:
-            if preproc_parallelism is None:
-                if support_prefetch_and_autotune():
-                    preproc_parallelism = tf.data.experimental.AUTOTUNE
-                else:
-                    preproc_parallelism = 1
-            self.dataset = self.dataset.map(preproc_fn, preproc_parallelism)
 
     def __enter__(self):
         return self.dataset
