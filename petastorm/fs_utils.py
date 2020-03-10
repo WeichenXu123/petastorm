@@ -183,3 +183,15 @@ class FilesystemResolver(object):
         raise RuntimeError('Pickling FilesystemResolver is not supported as it may contain some '
                            'a file-system instance objects that do not support pickling but do not have '
                            'anti-pickling protection')
+
+
+def get_filesystem_and_path_or_paths(url_or_urls, hdfs_driver):
+    if isinstance(url_or_urls, list):
+        fs = FilesystemResolver(url_or_urls[0], hdfs_driver=hdfs_driver)
+        path_or_paths = [FilesystemResolver(url, hdfs_driver=hdfs_driver).get_dataset_path() \
+                         for url in url_or_urls]
+    else:
+        fs = FilesystemResolver(url_or_urls, hdfs_driver=hdfs_driver)
+        path_or_paths = fs.get_dataset_path()
+
+    return fs, path_or_paths

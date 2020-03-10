@@ -24,7 +24,7 @@ from petastorm.cache import NullCache
 from petastorm.errors import NoDataAvailableError
 from petastorm.etl import dataset_metadata, rowgroup_indexing
 from petastorm.etl.dataset_metadata import PetastormMetadataError, infer_or_load_unischema
-from petastorm.fs_utils import FilesystemResolver
+from petastorm.fs_utils import FilesystemResolver, get_filesystem_and_path_or_paths
 from petastorm.local_disk_arrow_table_cache import LocalDiskArrowTableCache
 from petastorm.local_disk_cache import LocalDiskCache
 from petastorm.ngram import NGram
@@ -47,7 +47,16 @@ logger = logging.getLogger(__name__)
 _VENTILATE_EXTRA_ROWGROUPS = 2
 
 
-def make_reader(dataset_url,
+def _check_dataset_url(dataset_url):
+    if dataset_url is None or not isinstance(dataset_url, six.string_types):
+        raise ValueError('dataset_url must be a string')
+
+    dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
+    logger.debug('dataset_url: %s', dataset_url)
+    return dataset_url
+
+
+def make_reader(dataset_url_or_urls,
                 schema_fields=None,
                 reader_pool_type='thread', workers_count=10, pyarrow_serialize=False, results_queue_size=50,
                 shuffle_row_groups=True, shuffle_row_drop_partitions=1,
@@ -67,7 +76,7 @@ def make_reader(dataset_url,
     See :func:`~petastorm.make_batch_reader` to read from a Parquet store that was not generated using
     :func:`~petastorm.etl.dataset_metadata.materialize_dataset`.
 
-    :param dataset_url: an filepath or a url to a parquet directory,
+    :param dataset_url_or_urls: an filepath or a url to a parquet directory,
         e.g. ``'hdfs://some_hdfs_cluster/user/yevgeni/parquet8'``, or ``'file:///tmp/mydataset'``,
         or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``.
     :param schema_fields: Can be: a list of unischema fields and/or regex pattern strings; ``None`` to read all fields;
@@ -110,16 +119,12 @@ def make_reader(dataset_url,
         on the ``reader_pool_type`` value).
     :return: A :class:`Reader` object
     """
+    if isinstance(dataset_url_or_urls, list):
+        dataset_url_or_urls = [_check_dataset_url(url) for url in dataset_url_or_urls]
+    else:
+        dataset_url_or_urls = _check_dataset_url(dataset_url_or_urls)
 
-    if dataset_url is None or not isinstance(dataset_url, six.string_types):
-        raise ValueError('dataset_url must be a string')
-
-    dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
-    logger.debug('dataset_url: %s', dataset_url)
-
-    resolver = FilesystemResolver(dataset_url, hdfs_driver=hdfs_driver)
-    filesystem = resolver.filesystem()
-    dataset_path = resolver.get_dataset_path()
+    filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
     if cache_type is None or cache_type == 'null':
         cache = NullCache()
@@ -129,7 +134,7 @@ def make_reader(dataset_url,
         raise ValueError('Unknown cache_type: {}'.format(cache_type))
 
     try:
-        dataset_metadata.get_schema_from_dataset_url(dataset_url, hdfs_driver=hdfs_driver)
+        dataset_metadata.get_schema_from_dataset_url(dataset_url_or_urls, hdfs_driver=hdfs_driver)
     except PetastormMetadataError:
         raise RuntimeError('Currently make_reader supports reading only Petastorm datasets. '
                            'To read from a non-Petastorm Parquet store use make_batch_reader')
@@ -162,7 +167,7 @@ def make_reader(dataset_url,
     }
 
     try:
-        return Reader(filesystem, dataset_path,
+        return Reader(filesystem, dataset_path_or_paths,
                       worker_class=PyDictReaderWorker,
                       is_batched_reader=False,
                       **kwargs)
@@ -174,7 +179,7 @@ def make_reader(dataset_url,
                            'Inner exception: %s', str(e))
 
 
-def make_batch_reader(dataset_url,
+def make_batch_reader(dataset_url_or_urls,
                       schema_fields=None,
                       reader_pool_type='thread', workers_count=10,
                       shuffle_row_groups=True, shuffle_row_drop_partitions=1,
@@ -195,7 +200,7 @@ def make_batch_reader(dataset_url,
 
     NOTE: only scalar columns are currently supported.
 
-    :param dataset_url: an filepath or a url to a parquet directory,
+    :param dataset_url_or_urls: an filepath or a url to a parquet directory,
         e.g. ``'hdfs://some_hdfs_cluster/user/yevgeni/parquet8'``, or ``'file:///tmp/mydataset'``,
         or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``.
     :param schema_fields: A list of regex pattern strings. Only columns matching at least one of the
@@ -236,24 +241,21 @@ def make_batch_reader(dataset_url,
     :return: A :class:`Reader` object
     """
 
-    if dataset_url is None or not isinstance(dataset_url, six.string_types):
-        raise ValueError('dataset_url must be a string')
+    if isinstance(dataset_url_or_urls, list):
+        dataset_url_or_urls = [_check_dataset_url(url) for url in dataset_url_or_urls]
+    else:
+        dataset_url_or_urls = _check_dataset_url(dataset_url_or_urls)
+
+    filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
     try:
-        dataset_metadata.get_schema_from_dataset_url(dataset_url, hdfs_driver=hdfs_driver)
+        dataset_metadata.get_schema_from_dataset_url(dataset_url_or_urls, hdfs_driver=hdfs_driver)
         warnings.warn('Please use make_reader (instead of \'make_batch_dataset\' function to read this dataset. '
                       'You may get unexpected results. '
                       'Currently make_batch_reader supports reading only Parquet stores that contain '
                       'standard Parquet data types and do not require petastorm decoding.')
     except PetastormMetadataError:
         pass
-
-    dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
-    logger.debug('dataset_url: %s', dataset_url)
-
-    resolver = FilesystemResolver(dataset_url, hdfs_driver=hdfs_driver)
-    filesystem = resolver.filesystem()
-    dataset_path = resolver.get_dataset_path()
 
     if cache_type is None or cache_type == 'null':
         cache = NullCache()
@@ -273,7 +275,7 @@ def make_batch_reader(dataset_url,
     else:
         raise ValueError('Unknown reader_pool_type: {}'.format(reader_pool_type))
 
-    return Reader(filesystem, dataset_path,
+    return Reader(filesystem, dataset_path_or_paths,
                   schema_fields=schema_fields,
                   worker_class=ArrowReaderWorker,
                   reader_pool=reader_pool,
