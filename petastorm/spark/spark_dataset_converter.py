@@ -144,7 +144,9 @@ class SparkDatasetConverter(object):
                         batch_size=32,
                         prefetch=None,
                         num_epochs=None,
-                        preprocess_pandas_fn=None,
+                        preprocess_fn=None,
+                        preprocess_return_schema=None,
+                        preprocess_parallelism=None,
                         **petastorm_reader_kwargs):
         """
         Make a tensorflow dataset.
@@ -157,6 +159,11 @@ class SparkDatasetConverter(object):
         :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
                          if available, if 0, disable prefetch. Default is None.
 
+        :param preprocess_fn: preprocessing function. It's arguments must be the same
+                              with input data columns. It will apply on unrolled data.
+                              return tuple of results.
+        :param preprocess_return_schema: list of tuple (name, tf_type, shape)
+
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
                  will be closed.
@@ -166,7 +173,9 @@ class SparkDatasetConverter(object):
             batch_size=batch_size,
             prefetch=prefetch,
             num_epochs=num_epochs,
-            preprocess_pandas_fn=preprocess_pandas_fn,
+            preprocess_fn=preprocess_fn,
+            preprocess_return_schema=preprocess_return_schema,
+            preprocess_parallelism=preprocess_parallelism,
             petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
@@ -202,7 +211,9 @@ class TFDatasetContextManager(object):
                  batch_size,
                  prefetch,
                  num_epochs,
-                 preprocess_pandas_fn,
+                 preprocess_fn,
+                 preprocess_return_schema,
+                 preprocess_parallelism,
                  petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
@@ -219,17 +230,29 @@ class TFDatasetContextManager(object):
         if 'dataset_url' in petastorm_reader_kwargs:
             raise ValueError('Cannot set dataset_url argument by yourself.')
 
-        if 'transform_spec' in petastorm_reader_kwargs:
-            raise ValueError('Cannot set transform_spec argument by yourself.')
-
         petastorm_reader_kwargs['num_epochs'] = num_epochs
-        petastorm_reader_kwargs['transform_spec'] = TransformSpec(preprocess_pandas_fn)
 
         self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
-        self.dataset = make_petastorm_dataset(self.reader) \
-            .flat_map(tf.data.Dataset.from_tensor_slices) \
+        dataset = make_petastorm_dataset(self.reader)
 
-        self.dataset = self.dataset.batch(batch_size=batch_size)
+        # unroll dataset
+        dataset = dataset.flat_map(tf.data.Dataset.from_tensor_slices)
+
+        output_type_list = [spec[1] for spec in preprocess_return_schema]
+
+        # apply preprocess function.
+        def tf_preprocess_fn(*inputs):
+            outputs = tf.numpy_function(preprocess_fn, list(inputs), output_type_list)
+            # set output shape
+            for i in len(outputs):
+                outputs[i].set_shape(preprocess_return_schema[i][2])
+
+        dataset = dataset.map(tf_preprocess_fn, preprocess_parallelism)
+
+        # TODO: Now dataset lost column name (each row become a tuple), how to set them ?
+
+        # make batch
+        self.dataset = dataset.batch(batch_size=batch_size)
 
         if support_prefetch_and_autotune():
             if prefetch is None:
