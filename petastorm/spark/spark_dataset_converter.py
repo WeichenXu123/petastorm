@@ -173,9 +173,6 @@ class SparkDatasetConverter(object):
             batch_size=batch_size,
             prefetch=prefetch,
             num_epochs=num_epochs,
-            preprocess_fn=preprocess_fn,
-            preprocess_return_schema=preprocess_return_schema,
-            preprocess_parallelism=preprocess_parallelism,
             petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
@@ -211,9 +208,6 @@ class TFDatasetContextManager(object):
                  batch_size,
                  prefetch,
                  num_epochs,
-                 preprocess_fn,
-                 preprocess_return_schema,
-                 preprocess_parallelism,
                  petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
@@ -237,28 +231,16 @@ class TFDatasetContextManager(object):
 
         # unroll dataset
         dataset = dataset.flat_map(tf.data.Dataset.from_tensor_slices)
-
-        output_type_list = [spec[1] for spec in preprocess_return_schema]
-
-        # apply preprocess function.
-        def tf_preprocess_fn(*inputs):
-            outputs = tf.numpy_function(preprocess_fn, list(inputs), output_type_list)
-            # set output shape
-            for i in len(outputs):
-                outputs[i].set_shape(preprocess_return_schema[i][2])
-
-        dataset = dataset.map(tf_preprocess_fn, preprocess_parallelism)
-
-        # TODO: Now dataset lost column name (each row become a tuple), how to set them ?
-
         # make batch
-        self.dataset = dataset.batch(batch_size=batch_size)
+        dataset = dataset.batch(batch_size=batch_size)
 
         if support_prefetch_and_autotune():
             if prefetch is None:
                 prefetch = tf.data.experimental.AUTOTUNE
             if prefetch != 0:
-                self.dataset = self.dataset.prefetch(prefetch)
+                dataset = dataset.prefetch(prefetch)
+
+        self.dataset = dataset
 
     def __enter__(self):
         return self.dataset
