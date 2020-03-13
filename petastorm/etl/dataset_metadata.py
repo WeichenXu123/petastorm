@@ -371,7 +371,7 @@ def get_schema(dataset):
 def get_schema_from_dataset_url(dataset_url_or_urls, hdfs_driver='libhdfs3'):
     """Returns a :class:`petastorm.unischema.Unischema` object loaded from a dataset specified by a url.
 
-    :param dataset_url_or_urls: A dataset URL
+    :param dataset_url_or_urls: a url to a parquet directory or a url list (with the same scheme) to parquet files.
     :param hdfs_driver: A string denoting the hdfs driver to use (if using a dataset on hdfs). Current choices are
         libhdfs (java through JNI) or libhdfs3 (C++)
     :return: A :class:`petastorm.unischema.Unischema` object

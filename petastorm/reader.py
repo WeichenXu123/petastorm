@@ -24,7 +24,7 @@ from petastorm.cache import NullCache
 from petastorm.errors import NoDataAvailableError
 from petastorm.etl import dataset_metadata, rowgroup_indexing
 from petastorm.etl.dataset_metadata import PetastormMetadataError, infer_or_load_unischema
-from petastorm.fs_utils import FilesystemResolver, get_filesystem_and_path_or_paths
+from petastorm.fs_utils import get_filesystem_and_path_or_paths
 from petastorm.local_disk_arrow_table_cache import LocalDiskArrowTableCache
 from petastorm.local_disk_cache import LocalDiskCache
 from petastorm.ngram import NGram
@@ -56,11 +56,11 @@ def normalize_dataset_url(dataset_url):
     return dataset_url
 
 
-def _normalize_dataset_url_or_urls(dataset_url_or_urls):
+def normalize_dataset_url_or_urls(dataset_url_or_urls):
     if isinstance(dataset_url_or_urls, list):
-        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
+        return [normalize_dataset_url(url) for url in dataset_url_or_urls]
     else:
-        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
+        return normalize_dataset_url(dataset_url_or_urls)
 
 
 def make_reader(dataset_url_or_urls,
@@ -83,9 +83,10 @@ def make_reader(dataset_url_or_urls,
     See :func:`~petastorm.make_batch_reader` to read from a Parquet store that was not generated using
     :func:`~petastorm.etl.dataset_metadata.materialize_dataset`.
 
-    :param dataset_url_or_urls: an filepath or a url to a parquet directory,
+    :param dataset_url_or_urls: a url to a parquet directory or a url list (with the same scheme) to parquet files.
         e.g. ``'hdfs://some_hdfs_cluster/user/yevgeni/parquet8'``, or ``'file:///tmp/mydataset'``,
-        or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``.
+        or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``,
+        or ``[file:///tmp/mydataset/00000.parquet, file:///tmp/mydataset/00001.parquet]``.
     :param schema_fields: Can be: a list of unischema fields and/or regex pattern strings; ``None`` to read all fields;
             an NGram object, then it will return an NGram of the specified fields.
     :param reader_pool_type: A string denoting the reader pool type. Should be one of ['thread', 'process', 'dummy']
@@ -126,10 +127,7 @@ def make_reader(dataset_url_or_urls,
         on the ``reader_pool_type`` value).
     :return: A :class:`Reader` object
     """
-    if isinstance(dataset_url_or_urls, list):
-        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
-    else:
-        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
+    dataset_url_or_urls = normalize_dataset_url_or_urls(dataset_url_or_urls)
 
     filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
@@ -207,9 +205,10 @@ def make_batch_reader(dataset_url_or_urls,
 
     NOTE: only scalar columns are currently supported.
 
-    :param dataset_url_or_urls: an filepath or a url to a parquet directory,
+    :param dataset_url_or_urls: a url to a parquet directory or a url list (with the same scheme) to parquet files.
         e.g. ``'hdfs://some_hdfs_cluster/user/yevgeni/parquet8'``, or ``'file:///tmp/mydataset'``,
-        or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``.
+        or ``'s3://bucket/mydataset'``, or ``'gs://bucket/mydataset'``,
+        or ``[file:///tmp/mydataset/00000.parquet, file:///tmp/mydataset/00001.parquet]``.
     :param schema_fields: A list of regex pattern strings. Only columns matching at least one of the
         patterns in the list will be loaded.
     :param reader_pool_type: A string denoting the reader pool type. Should be one of ['thread', 'process', 'dummy']
@@ -247,11 +246,7 @@ def make_batch_reader(dataset_url_or_urls,
         on the ``reader_pool_type`` value).
     :return: A :class:`Reader` object
     """
-
-    if isinstance(dataset_url_or_urls, list):
-        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
-    else:
-        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
+    dataset_url_or_urls = normalize_dataset_url_or_urls(dataset_url_or_urls)
 
     filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
@@ -316,8 +311,9 @@ class Reader(object):
             ``s3://`` and ``gs://`` support, use ``make_reader``). The default hdfs driver is ``libhdfs3``.
             If you want to to use ``libhdfs``, use
             ``pyarrow_filesystem=pyarrow.hdfs.connect('hdfs:///some/path', driver='libhdfs')``.
-        :param dataset_path: filepath to a parquet directory on the specified filesystem.
-            e.g. ``'/user/yevgeni/parquet8'``, or ``'/tmp/mydataset'``.
+        :param dataset_path: filepath to a parquet directory or parquet file path list on the specified filesystem.
+            e.g. ``'/user/yevgeni/parquet8'``, or ``'/tmp/mydataset'``,
+            or ``[/tmp/mydataset/00000.parquet, /tmp/mydataset/00001.parquet]``
         :param schema_fields: Either list of unischema fields to subset, or ``None`` to read all fields.
             OR an NGram object, then it will return an NGram of the specified properties.
         :param shuffle_row_groups: Whether to shuffle row groups (the order in which full row groups are read)
