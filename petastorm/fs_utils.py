@@ -187,6 +187,14 @@ class FilesystemResolver(object):
 
 def get_filesystem_and_path_or_paths(url_or_urls, hdfs_driver):
     if isinstance(url_or_urls, list):
+        url_list = url_or_urls
+    else:
+        url_list = [url_or_urls]
+
+    fs = FilesystemResolver(url_or_urls[0], hdfs_driver=hdfs_driver)
+    path_list =
+
+    if isinstance(url_or_urls, list):
         fs = FilesystemResolver(url_or_urls[0], hdfs_driver=hdfs_driver)
         path_or_paths = [FilesystemResolver(url, hdfs_driver=hdfs_driver).get_dataset_path() \
                          for url in url_or_urls]

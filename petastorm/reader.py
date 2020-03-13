@@ -47,13 +47,20 @@ logger = logging.getLogger(__name__)
 _VENTILATE_EXTRA_ROWGROUPS = 2
 
 
-def _check_dataset_url(dataset_url):
+def normalize_dataset_url(dataset_url):
     if dataset_url is None or not isinstance(dataset_url, six.string_types):
         raise ValueError('dataset_url must be a string')
 
     dataset_url = dataset_url[:-1] if dataset_url[-1] == '/' else dataset_url
     logger.debug('dataset_url: %s', dataset_url)
     return dataset_url
+
+
+def _normalize_dataset_url_or_urls(dataset_url_or_urls):
+    if isinstance(dataset_url_or_urls, list):
+        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
+    else:
+        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
 
 
 def make_reader(dataset_url_or_urls,
@@ -120,9 +127,9 @@ def make_reader(dataset_url_or_urls,
     :return: A :class:`Reader` object
     """
     if isinstance(dataset_url_or_urls, list):
-        dataset_url_or_urls = [_check_dataset_url(url) for url in dataset_url_or_urls]
+        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
     else:
-        dataset_url_or_urls = _check_dataset_url(dataset_url_or_urls)
+        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
 
     filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
@@ -242,9 +249,9 @@ def make_batch_reader(dataset_url_or_urls,
     """
 
     if isinstance(dataset_url_or_urls, list):
-        dataset_url_or_urls = [_check_dataset_url(url) for url in dataset_url_or_urls]
+        dataset_url_or_urls = [normalize_dataset_url(url) for url in dataset_url_or_urls]
     else:
-        dataset_url_or_urls = _check_dataset_url(dataset_url_or_urls)
+        dataset_url_or_urls = normalize_dataset_url(dataset_url_or_urls)
 
     filesystem, dataset_path_or_paths = get_filesystem_and_path_or_paths(dataset_url_or_urls, hdfs_driver)
 
