@@ -156,10 +156,14 @@ class SparkDatasetConverter(object):
         :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
                          if available, if 0, disable prefetch. Default is None.
 
-        :param preprocess_fn: preprocessing function. It's arguments must be the same
-                              with input data columns. It will apply on unrolled data.
-                              return tuple of results.
-        :param preprocess_return_schema: list of tuple (name, tf_type, shape)
+        :param num_epochs: An epoch is a single pass over all rows in the
+            dataset. Setting ``num_epochs`` to ``None`` will result in an
+            infinite number of epochs. Default value `None`.
+        :param workers_count: An int for the number of workers to use in the
+            reader pool. This only is used for the thread or process pool.
+            Defaults value `1`.
+        :param petastorm_reader_kwargs: all the arguments for
+            `petastorm.make_batch_reader()`.
 
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
@@ -170,7 +174,7 @@ class SparkDatasetConverter(object):
             batch_size=batch_size,
             prefetch=prefetch,
             num_epochs=num_epochs,
-            workers_count=1,
+            workers_count=workers_count,
             petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
@@ -189,11 +193,10 @@ class SparkDatasetConverter(object):
         :param batch_size: The number of items to return per batch
         :param num_epochs: An epoch is a single pass over all rows in the
             dataset. Setting ``num_epochs`` to ``None`` will result in an
-            infinite number of epochs.
+            infinite number of epochs. Default value `None`.
         :param workers_count: An int for the number of workers to use in the
             reader pool. This only is used for the thread or process pool.
-            Defaults to None, which means using the default value from
-            `petastorm.make_batch_reader()`.
+            Defaults value `1`.
         :param petastorm_reader_kwargs: all the arguments for
             `petastorm.make_batch_reader()`.
 
@@ -201,11 +204,12 @@ class SparkDatasetConverter(object):
                  when exit the returned context manager, the reader
                  will be closed.
         """
-        return TorchDatasetContextManager(self.cache_dir_url,
-                                          batch_size=batch_size,
-                                          num_epochs=num_epochs,
-                                          workers_count=workers_count,
-                                          petastorm_reader_kwargs=petastorm_reader_kwargs)
+        return TorchDatasetContextManager(
+            self.cache_dir_url,
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            workers_count=workers_count,
+            petastorm_reader_kwargs=petastorm_reader_kwargs)
 
     def delete(self):
         """
