@@ -281,10 +281,6 @@ def test_tf_dataset_preproc(test_ctx):
     assert ts[0].shape == (2, 3, 2)
 
 
-def test_tf_dataset_advanced_params(test_ctx):
-
-
-
 def test_precision(test_ctx):
     df = test_ctx.spark.range(10)
     df = df.withColumn("float_col", df.id.cast(FloatType())) \
