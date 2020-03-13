@@ -13,21 +13,20 @@
 # limitations under the License.
 
 import atexit
+import datetime
+import logging
 import shutil
 import threading
-import datetime
 import uuid
-import logging
 import warnings
-
 from distutils.version import LooseVersion
 
 from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
-from pyspark.sql.types import FloatType, DoubleType, ArrayType
+from pyspark.sql.types import ArrayType, DoubleType, FloatType
 from six.moves.urllib.parse import urlparse
 
-from petastorm import make_batch_reader
+import petastorm
 from petastorm.fs_utils import FilesystemResolver
 
 DEFAULT_ROW_GROUP_SIZE_BYTES = 32 * 1024 * 1024
@@ -144,9 +143,7 @@ class SparkDatasetConverter(object):
                         batch_size=32,
                         prefetch=None,
                         num_epochs=None,
-                        preprocess_fn=None,
-                        preprocess_return_schema=None,
-                        preprocess_parallelism=None,
+                        workers_count=1,
                         **petastorm_reader_kwargs):
         """
         Make a tensorflow dataset.
@@ -173,10 +170,15 @@ class SparkDatasetConverter(object):
             batch_size=batch_size,
             prefetch=prefetch,
             num_epochs=num_epochs,
+            workers_count=1,
             petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
-    def make_torch_dataloader(self):
+    def make_torch_dataloader(self,
+                              batch_size=32,
+                              num_epochs=None,
+                              workers_count=1,
+                              **petastorm_reader_kwargs):
         """
         Make a PyTorch DataLoader.
 
@@ -184,11 +186,26 @@ class SparkDatasetConverter(object):
           1) Open a petastorm reader on the materialized dataset dir.
           2) Create a PyTorch DataLoader based on the reader created in (1)
 
+        :param batch_size: The number of items to return per batch
+        :param num_epochs: An epoch is a single pass over all rows in the
+            dataset. Setting ``num_epochs`` to ``None`` will result in an
+            infinite number of epochs.
+        :param workers_count: An int for the number of workers to use in the
+            reader pool. This only is used for the thread or process pool.
+            Defaults to None, which means using the default value from
+            `petastorm.make_batch_reader()`.
+        :param petastorm_reader_kwargs: all the arguments for
+            `petastorm.make_batch_reader()`.
+
         :return: a context manager for a `torch.utils.data.DataLoader` object.
                  when exit the returned context manager, the reader
                  will be closed.
         """
-        return _torch_dataset_context_manager(self.cache_dir_url)
+        return TorchDatasetContextManager(self.cache_dir_url,
+                                          batch_size=batch_size,
+                                          num_epochs=num_epochs,
+                                          workers_count=workers_count,
+                                          petastorm_reader_kwargs=petastorm_reader_kwargs)
 
     def delete(self):
         """
@@ -208,6 +225,7 @@ class TFDatasetContextManager(object):
                  batch_size,
                  prefetch,
                  num_epochs,
+                 workers_count,
                  petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
@@ -215,7 +233,6 @@ class TFDatasetContextManager(object):
         :param prefetch: prefetch for tf dataset
         """
         from petastorm.tf_utils import make_petastorm_dataset
-        from petastorm.transform import TransformSpec
         import tensorflow as tf
 
         def support_prefetch_and_autotune():
@@ -225,8 +242,10 @@ class TFDatasetContextManager(object):
             raise ValueError('Cannot set dataset_url argument by yourself.')
 
         petastorm_reader_kwargs['num_epochs'] = num_epochs
+        if workers_count is not None:
+            petastorm_reader_kwargs["workers_count"] = workers_count
 
-        self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
+        self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
         dataset = make_petastorm_dataset(self.reader)
 
         # unroll dataset
@@ -250,20 +269,31 @@ class TFDatasetContextManager(object):
         self.reader.join()
 
 
-class _torch_dataset_context_manager(object):
+class TorchDatasetContextManager(object):
     """
     A context manager that manages the creation and termination of a
     :class:`petastorm.Reader`.
     """
 
-    def __init__(self, data_url):
+    def __init__(self,
+                 data_url,
+                 batch_size,
+                 num_epochs,
+                 workers_count,
+                 petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
+        See `SparkDatasetConverter.make_torch_dataloader()` for the definitions
+        of the other parameters.
         """
         from petastorm.pytorch import DataLoader
 
-        self.reader = make_batch_reader(data_url)
-        self.loader = DataLoader(reader=self.reader)
+        petastorm_reader_kwargs["num_epochs"] = num_epochs
+        if workers_count is not None:
+            petastorm_reader_kwargs["workers_count"] = workers_count
+
+        self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
+        self.loader = DataLoader(reader=self.reader, batch_size=batch_size)
 
     def __enter__(self):
         return self.loader
@@ -395,10 +425,35 @@ def _gen_cache_dir_name():
     return '{time}-appid-{appid}-{uuid}'.format(time=time_str, appid=appid, uuid=uuid_str)
 
 
+def _convert_vector(df, precision):
+    from pyspark.ml.linalg import Vector
+    from pyspark.mllib.linalg import Vector as OldVector
+
+    types_set = {struct_field.dataType for struct_field in df.schema}
+    found_vectors = not types_set.isdisjoint({Vector, OldVector})
+    if not found_vectors:
+        return df
+
+    import pyspark
+    if LooseVersion(pyspark.__version__) >= LooseVersion('3.0'):
+        raise ValueError("Vector columns are not supported for pyspark<3.0.0.")
+    # pylint: disable=import-error
+    from pyspark.ml.functions import vector_to_array
+    # pylint: enable=import-error
+
+    for struct_field in df.schema:
+        col_name = struct_field.name
+        if struct_field.dataType in {Vector, OldVector}:
+            df = df.withColumn(col_name,
+                               vector_to_array(df[col_name], precision))
+    return df
+
+
 def _materialize_df(df, parent_cache_dir_url, parquet_row_group_size_bytes,
                     compression_codec, precision):
     dir_name = _gen_cache_dir_name()
     save_to_dir_url = _make_sub_dir_url(parent_cache_dir_url, dir_name)
+    df = _convert_vector(df, precision)
     df = _convert_precision(df, precision)
 
     df.write \

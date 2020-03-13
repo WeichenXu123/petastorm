@@ -16,21 +16,24 @@ import os
 import subprocess
 import sys
 import tempfile
-import pytest
+from distutils.version import LooseVersion
 
 import numpy as np
+import pyspark
+import pytest
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType, DoubleType,
-                               FloatType, IntegerType, LongType, ShortType,
-                               StringType, StructField, StructType)
+from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType,
+                               DoubleType, FloatType, IntegerType, LongType,
+                               ShortType, StringType, StructField, StructType)
 from six.moves.urllib.parse import urlparse
 
+import petastorm
 from petastorm.fs_utils import FilesystemResolver
-from petastorm.spark import make_spark_converter
-from petastorm.spark import spark_dataset_converter
-from petastorm.spark.spark_dataset_converter import register_delete_dir_handler, \
-    _check_url, _get_parent_cache_dir_url, _make_sub_dir_url
+from petastorm.spark import make_spark_converter, spark_dataset_converter
+from petastorm.spark.spark_dataset_converter import (
+    _check_url, _get_parent_cache_dir_url, _make_sub_dir_url,
+    register_delete_dir_handler)
 
 
 class TestContext(object):
@@ -278,6 +281,10 @@ def test_tf_dataset_preproc(test_ctx):
     assert ts[0].shape == (2, 3, 2)
 
 
+def test_tf_dataset_advanced_params(test_ctx):
+
+
+
 def test_precision(test_ctx):
     df = test_ctx.spark.range(10)
     df = df.withColumn("float_col", df.id.cast(FloatType())) \
@@ -306,7 +313,8 @@ def test_precision(test_ctx):
 
 def test_array(test_ctx):
     df = test_ctx.spark.createDataFrame(
-        [([1., 2., 3.],)],
+        [([1., 2., 3.],),
+         ([4., 5., 6.],)],
         StructType([
             StructField(name='c1', dataType=ArrayType(DoubleType()))
         ])
@@ -318,3 +326,184 @@ def test_array(test_ctx):
         with tf.Session() as sess:
             ts = sess.run(tensor)
     assert np.float32 == ts.c1.dtype.type
+
+
+@pytest.mark.skipif(
+    LooseVersion(pyspark.__version__) < LooseVersion("3.0"),
+    reason="Vector columns are not supported for pyspark {} < 3.0.0"
+    .format(pyspark.__version__))
+def test_vector_to_array(test_ctx):
+    from pyspark.ml.linalg import Vectors
+    from pyspark.mllib.linalg import Vectors as OldVectors
+    df = test_ctx.spark.createDataFrame([
+        (Vectors.dense(1.0, 2.0, 3.0), OldVectors.dense(10.0, 20.0, 30.0)),
+        (Vectors.dense(5.0, 6.0, 7.0), OldVectors.dense(50.0, 60.0, 70.0))],
+                                        ["vec", "oldVec"])
+    converter1 = make_spark_converter(df)
+    with converter1.make_tf_dataset() as dataset:
+        iterator = dataset.make_one_shot_iterator()
+        tensor = iterator.get_next()
+        with tf.Session() as sess:
+            ts = sess.run(tensor)
+    assert np.float32 == ts.vec.dtype.type
+    assert np.float32 == ts.oldVec.dtype.type
+    assert (2, 3) == ts.vec.shape
+    assert (2, 3) == ts.oldVec.shape
+    assert [[1., 2., 3.], [5., 6., 7.]] == ts.vec
+    assert [[10., 20., 30.], [50., 60., 70]] == ts.oldVec
+
+
+def test_torch_primitive(test_ctx):
+    import torch
+
+    schema = StructType([
+        StructField("bool_col", BooleanType(), False),
+        StructField("float_col", FloatType(), False),
+        StructField("double_col", DoubleType(), False),
+        StructField("short_col", ShortType(), False),
+        StructField("int_col", IntegerType(), False),
+        StructField("long_col", LongType(), False),
+        StructField("byte_col", ByteType(), False),
+    ])
+    df = test_ctx.spark.createDataFrame(
+        [(True, 0.12, 432.1, 5, 5, 0, -128),
+         (False, 123.45, 0.987, 9, 908, 765, 127)],
+        schema=schema).coalesce(1)
+    # If we use numPartition > 1, the order of the loaded dataset would
+    # be non-deterministic.
+    expected_df = df.collect()
+
+    converter = make_spark_converter(df)
+    batch = None
+    with converter.make_torch_dataloader(num_epochs=1) as dataloader:
+        for i, batch in enumerate(dataloader):
+            # default batch_size = 1
+            for col in df.schema.names:
+                actual_ele = batch[col][0]
+                expected_ele = expected_df[i][col]
+                if col == "double_col":
+                    assert pytest.approx(expected_ele, rel=1e-6) == actual_ele
+                else:
+                    assert expected_ele == actual_ele
+
+        assert len(expected_df) == len(converter)
+    assert torch.uint8 == batch["bool_col"].dtype
+    assert torch.int8 == batch["byte_col"].dtype
+    assert torch.float32 == batch["double_col"].dtype
+    assert torch.float32 == batch["float_col"].dtype
+    assert torch.int32 == batch["int_col"].dtype
+    assert torch.int64 == batch["long_col"].dtype
+    assert torch.int16 == batch["short_col"].dtype
+
+
+def test_torch_pickling_remotely(test_ctx):
+    df1 = test_ctx.spark.range(100, 101)
+    converter1 = make_spark_converter(df1)
+
+    def map_fn(_):
+        with converter1.make_torch_dataloader(num_epochs=1) as dataloader:
+            for batch in dataloader:
+                ret = batch["id"][0]
+        return ret
+
+    result = test_ctx.spark.sparkContext.parallelize(range(1), 1) \
+        .map(map_fn).collect()[0]
+    assert result == 100
+
+
+def test_advanced_params(test_ctx):
+    df = test_ctx.spark.range(8)
+    conv = make_spark_converter(df)
+    batch_size = 2
+    with conv.make_torch_dataloader(batch_size=batch_size,
+                                    num_epochs=1) as dataloader:
+        for batch in dataloader:
+            assert batch_size == batch['id'].shape[0]
+
+    from torchvision import transforms
+    from petastorm import TransformSpec
+
+    def _transform_row(df_row):
+        scale_tranform = transforms.Compose([
+            transforms.Lambda(lambda x: x * 0.1),
+        ])
+        return scale_tranform(df_row)
+
+    transform = TransformSpec(_transform_row)
+    with conv.make_torch_dataloader(transform_spec=transform,
+                                    num_epochs=1) as dataloader:
+        for batch in dataloader:
+            assert min(batch['id']) >= 0 and max(batch['id']) < 1
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'xyz'"):
+        conv.make_torch_dataloader(xyz=1)
+
+    def mock_make_batch_reader(dataset_url,
+                               schema_fields=None,
+                               reader_pool_type='thread', workers_count=10,
+                               shuffle_row_groups=True, shuffle_row_drop_partitions=1,
+                               predicate=None,
+                               rowgroup_selector=None,
+                               num_epochs=1,
+                               cur_shard=None, shard_count=None,
+                               cache_type='null', cache_location=None, cache_size_limit=None,
+                               cache_row_size_estimate=None, cache_extra_settings=None,
+                               hdfs_driver='libhdfs3',
+                               transform_spec=None):
+        return {
+            "dataset_url": dataset_url,
+            "schema_fields": schema_fields,
+            "reader_pool_type": reader_pool_type,
+            "workers_count": workers_count,
+            "shuffle_row_groups": shuffle_row_groups,
+            "shuffle_row_drop_partitions": shuffle_row_drop_partitions,
+            "predicate": predicate,
+            "rowgroup_selector": rowgroup_selector,
+            "num_epochs": num_epochs,
+            "cur_shard": cur_shard,
+            "shard_count": shard_count,
+            "cache_type": cache_type,
+            "cache_location": cache_location,
+            "cache_size_limit": cache_size_limit,
+            "cache_row_size_estimate": cache_row_size_estimate,
+            "cache_extra_settings": cache_extra_settings,
+            "hdfs_driver": hdfs_driver,
+            "transform_spec": transform_spec,
+        }
+
+    original_fn = petastorm.make_batch_reader
+    petastorm.make_batch_reader = mock_make_batch_reader
+    ctm = conv.make_torch_dataloader(schema_fields="schema_1",
+                                     reader_pool_type='type_1',
+                                     workers_count="count_1",
+                                     shuffle_row_groups="row_group_1",
+                                     shuffle_row_drop_partitions="drop_1",
+                                     predicate="predicate_1",
+                                     rowgroup_selector="selector_1",
+                                     num_epochs="num_1",
+                                     cur_shard="shard_1",
+                                     shard_count="total_shard",
+                                     cache_type="cache_1",
+                                     cache_location="location_1",
+                                     cache_size_limit="limit_1",
+                                     cache_extra_settings="extra_1",
+                                     hdfs_driver="driver_1",
+                                     transform_spec="transform_spec_1")
+    assert ctm.reader["schema_fields"] == "schema_1"
+    assert ctm.reader["reader_pool_type"] == "type_1"
+    assert ctm.reader["workers_count"] == "count_1"
+    assert ctm.reader["shuffle_row_groups"] == "row_group_1"
+    assert ctm.reader["shuffle_row_drop_partitions"] == "drop_1"
+    assert ctm.reader["predicate"] == "predicate_1"
+    assert ctm.reader["rowgroup_selector"] == "selector_1"
+    assert ctm.reader["num_epochs"] == "num_1"
+    assert ctm.reader["cur_shard"] == "shard_1"
+    assert ctm.reader["shard_count"] == "total_shard"
+    assert ctm.reader["cache_type"] == "cache_1"
+    assert ctm.reader["cache_location"] == "location_1"
+    assert ctm.reader["cache_size_limit"] == "limit_1"
+    assert ctm.reader["cache_extra_settings"] == "extra_1"
+    assert ctm.reader["hdfs_driver"] == "driver_1"
+    assert ctm.reader["transform_spec"] == "transform_spec_1"
+
+    petastorm.make_batch_reader = original_fn
