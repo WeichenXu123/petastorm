@@ -261,26 +261,6 @@ def test_tf_dataset_batch_size(test_ctx):
     assert len(ts.id) == batch_size
 
 
-def test_tf_dataset_preproc(test_ctx):
-    df1 = test_ctx.spark.createDataFrame(
-        [([1., 2., 3., 4., 5., 6.],),
-         ([4., 5., 6., 7., 8., 9.],)],
-        StructType([StructField(name='c1', dataType=ArrayType(DoubleType()))]))
-
-    converter1 = make_spark_converter(df1)
-
-    def preproc_fn(x):
-        return tf.reshape(x.c1, [-1, 3, 2]),
-
-    with converter1.make_tf_dataset(batch_size=2, preproc_fn=preproc_fn) as dataset:
-        iterator = dataset.make_one_shot_iterator()
-        tensor = iterator.get_next()
-        with tf.Session() as sess:
-            ts = sess.run(tensor)
-
-    assert ts[0].shape == (2, 3, 2)
-
-
 def test_precision(test_ctx):
     df = test_ctx.spark.range(10)
     df = df.withColumn("float_col", df.id.cast(FloatType())) \
