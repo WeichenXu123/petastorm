@@ -142,9 +142,8 @@ class SparkDatasetConverter(object):
     def make_tf_dataset(self,
                         batch_size=32,
                         prefetch=None,
-                        num_epochs=None,
-                        workers_count=1,
-                        **petastorm_reader_kwargs):
+                        preproc_fn=None,
+                        preproc_parallelism=None):
         """
         Make a tensorflow dataset.
 
@@ -155,15 +154,10 @@ class SparkDatasetConverter(object):
         :param batch_size: batch size of the generated tf.data.dataset
         :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
                          if available, if 0, disable prefetch. Default is None.
-
-        :param num_epochs: An epoch is a single pass over all rows in the
-            dataset. Setting ``num_epochs`` to ``None`` will result in an
-            infinite number of epochs. Default value `None`.
-        :param workers_count: An int for the number of workers to use in the
-            reader pool. This only is used for the thread or process pool.
-            Defaults value `1`.
-        :param petastorm_reader_kwargs: all the arguments for
-            `petastorm.make_batch_reader()`.
+        :param preproc_fn: preprocessing function, will apply on batched tf tensor.
+        :param preproc_parallelism: parallelism for preprocessing function.
+                                    If None, will autotune best parallelism if available.
+                                    If tf do not support autotune, fallback to 1.
 
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
@@ -173,15 +167,16 @@ class SparkDatasetConverter(object):
             self.cache_dir_url,
             batch_size=batch_size,
             prefetch=prefetch,
-            num_epochs=num_epochs,
-            workers_count=workers_count,
-            petastorm_reader_kwargs=petastorm_reader_kwargs
+            preproc_fn=preproc_fn,
+            preproc_parallelism=preproc_parallelism
         )
 
     def make_torch_dataloader(self,
                               batch_size=32,
                               num_epochs=None,
-                              workers_count=1,
+                              workers_count=None,
+                              cur_shard=None,
+                              shard_count=None,
                               **petastorm_reader_kwargs):
         """
         Make a PyTorch DataLoader.
@@ -193,10 +188,17 @@ class SparkDatasetConverter(object):
         :param batch_size: The number of items to return per batch
         :param num_epochs: An epoch is a single pass over all rows in the
             dataset. Setting ``num_epochs`` to ``None`` will result in an
-            infinite number of epochs. Default value `None`.
+            infinite number of epochs.
         :param workers_count: An int for the number of workers to use in the
             reader pool. This only is used for the thread or process pool.
-            Defaults value `1`.
+            Defaults to None, which means using the default value from
+            `petastorm.make_batch_reader()`.
+        :param cur_shard: An int denoting the current shard number. Each node
+            reading a shard should pass in a unique shard number in the range
+            [0, shard_count). shard_count must be supplied as well. Defaults to
+            None
+        :param shard_count: An int denoting the number of shards to break this
+            dataset into. Defaults to None
         :param petastorm_reader_kwargs: all the arguments for
             `petastorm.make_batch_reader()`.
 
@@ -204,12 +206,13 @@ class SparkDatasetConverter(object):
                  when exit the returned context manager, the reader
                  will be closed.
         """
-        return TorchDatasetContextManager(
-            self.cache_dir_url,
-            batch_size=batch_size,
-            num_epochs=num_epochs,
-            workers_count=workers_count,
-            petastorm_reader_kwargs=petastorm_reader_kwargs)
+        return TorchDatasetContextManager(self.cache_dir_url,
+                                          batch_size,
+                                          num_epochs,
+                                          workers_count,
+                                          cur_shard,
+                                          shard_count,
+                                          **petastorm_reader_kwargs)
 
     def delete(self):
         """
@@ -228,13 +231,14 @@ class TFDatasetContextManager(object):
                  data_url,
                  batch_size,
                  prefetch,
-                 num_epochs,
-                 workers_count,
-                 petastorm_reader_kwargs):
+                 preproc_fn,
+                 preproc_parallelism):
         """
         :param data_url: A string specifying the data URL.
         :param batch_size: batch size of the generated tf.data.dataset
         :param prefetch: prefetch for tf dataset
+        :param preproc_fn: preprocessing function
+        :param preproc_parallelism: parallelism for preprocessing function
         """
         from petastorm.tf_utils import make_petastorm_dataset
         import tensorflow as tf
@@ -242,28 +246,25 @@ class TFDatasetContextManager(object):
         def support_prefetch_and_autotune():
             return LooseVersion(tf.__version__) >= LooseVersion('1.14')
 
-        if 'dataset_url' in petastorm_reader_kwargs:
-            raise ValueError('Cannot set dataset_url argument by yourself.')
+        self.reader = petastorm.make_batch_reader(data_url)
+        self.dataset = make_petastorm_dataset(self.reader) \
+            .flat_map(tf.data.Dataset.from_tensor_slices) \
 
-        petastorm_reader_kwargs['num_epochs'] = num_epochs
-        if workers_count is not None:
-            petastorm_reader_kwargs["workers_count"] = workers_count
-
-        self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
-        dataset = make_petastorm_dataset(self.reader)
-
-        # unroll dataset
-        dataset = dataset.flat_map(tf.data.Dataset.from_tensor_slices)
-        # make batch
-        dataset = dataset.batch(batch_size=batch_size)
+        self.dataset = self.dataset.batch(batch_size=batch_size)
 
         if support_prefetch_and_autotune():
             if prefetch is None:
                 prefetch = tf.data.experimental.AUTOTUNE
             if prefetch != 0:
-                dataset = dataset.prefetch(prefetch)
+                self.dataset = self.dataset.prefetch(prefetch)
 
-        self.dataset = dataset
+        if preproc_fn is not None:
+            if preproc_parallelism is None:
+                if support_prefetch_and_autotune():
+                    preproc_parallelism = tf.data.experimental.AUTOTUNE
+                else:
+                    preproc_parallelism = 1
+            self.dataset = self.dataset.map(preproc_fn, preproc_parallelism)
 
     def __enter__(self):
         return self.dataset
@@ -279,12 +280,8 @@ class TorchDatasetContextManager(object):
     :class:`petastorm.Reader`.
     """
 
-    def __init__(self,
-                 data_url,
-                 batch_size,
-                 num_epochs,
-                 workers_count,
-                 petastorm_reader_kwargs):
+    def __init__(self, data_url, batch_size, num_epochs, workers_count,
+                 cur_shard, shard_count, **petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
         See `SparkDatasetConverter.make_torch_dataloader()` for the definitions
@@ -295,6 +292,8 @@ class TorchDatasetContextManager(object):
         petastorm_reader_kwargs["num_epochs"] = num_epochs
         if workers_count is not None:
             petastorm_reader_kwargs["workers_count"] = workers_count
+        petastorm_reader_kwargs["cur_shard"] = cur_shard
+        petastorm_reader_kwargs["shard_count"] = shard_count
 
         self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
         self.loader = DataLoader(reader=self.reader, batch_size=batch_size)
